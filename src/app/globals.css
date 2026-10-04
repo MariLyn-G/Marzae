@@ -440,6 +440,8 @@ button { font: inherit; }
   .section-head h2 { font-size: 34px; }
   .quote blockquote { font-size: 23px; }
   .stage3d { height: 420px; }
+  .stage3d .views { flex-direction: row; flex-wrap: wrap; gap: 6px 16px; right: 16px; }
+  .stage3d .views .uline { font-size: 10px; letter-spacing: 0.12em; }
   .try-stage { height: 480px; }
   .looks > div { height: 110px; }
   .tracker, .stage-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
