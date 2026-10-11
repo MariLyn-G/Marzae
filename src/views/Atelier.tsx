@@ -1,11 +1,13 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { SignOutButton } from '@/components/SignIn';
 import { BagImage } from '@/components/BagImage';
 import { getProduct, hardware, leather, strap } from '@/lib/catalog';
-import { money } from '@/lib/money';
+import { downscaleImage } from '@/lib/downscale';
+import { type Currency, money } from '@/lib/money';
 import {
   addDays,
   fmtDate,
@@ -39,14 +41,15 @@ function csvUrl(tab: Tab, q: string): string {
   return '/api/atelier/orders.csv' + (s ? '?' + s : '');
 }
 
-type Result = { order?: Order; orders?: Order[]; error?: string; signedOut?: boolean };
+type Result = { order?: Order; orders?: Order[]; error?: string; warning?: string; signedOut?: boolean };
 
 async function call(url: string, method: string, body?: unknown): Promise<Result> {
   try {
+    const form = body instanceof FormData;
     const res = await fetch(url, {
       method,
-      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      headers: body === undefined || form ? undefined : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : form ? body : JSON.stringify(body),
     });
     if (res.status === 401) return { signedOut: true, error: 'Signed out' };
     const data = await res.json().catch(() => ({}));
@@ -79,7 +82,10 @@ export function AtelierView({ initialOrders, staff }: { initialOrders: Order[]; 
   );
   const sel = orders.find((o) => o.id === selId) ?? list[0] ?? null;
   const live = orders.filter((o) => !o.cancelled);
-  const rev30 = live.filter((o) => o.placedAt >= addDays(stamp, -30)).reduce((n, o) => n + o.totalEur, 0);
+  // One figure per currency: amounts in different currencies are never added together.
+  const rev30 = new Map<Currency, number>();
+  for (const o of live.filter((x) => x.placedAt >= addDays(stamp, -30))) rev30.set(o.currency, (rev30.get(o.currency) ?? 0) + o.total);
+  const revenue = rev30.size ? [...rev30].map(([c, n]) => money(n, c)).join(' · ') : money(0);
   const allChecked = list.length > 0 && list.every((o) => checked.includes(o.id));
   const track = trackDraft && sel && trackDraft.id === sel.id ? trackDraft.value : sel?.tracking ?? '';
 
@@ -87,7 +93,7 @@ export function AtelierView({ initialOrders, staff }: { initialOrders: Order[]; 
     { n: String(live.filter((o) => o.stage === 'new').length), l: 'Awaiting cutting' },
     { n: String(live.filter((o) => o.stage === 'cutting' || o.stage === 'stitching').length), l: 'On the bench' },
     { n: String(live.filter((o) => o.stage === 'shipped').length), l: 'In transit' },
-    { n: money(rev30), l: 'Revenue, last 30 days' },
+    { n: revenue, l: 'Revenue, last 30 days' },
   ];
 
   const toggleCheck = (id: string) => setChecked(checked.includes(id) ? checked.filter((c) => c !== id) : [...checked, id]);
@@ -114,8 +120,21 @@ export function AtelierView({ initialOrders, staff }: { initialOrders: Order[]; 
       return false;
     }
     merge(res.orders ?? (res.order ? [res.order] : []));
-    if (res.error) setErr(res.error);
+    if (res.error || res.warning) setErr(res.error ?? res.warning ?? null);
     return !res.error;
+  };
+
+  const uploadPhoto = async (orderId: string, file: File) => {
+    let blob: Blob;
+    try {
+      blob = await downscaleImage(file);
+    } catch {
+      setErr('Could not read that photo. Try a JPEG or PNG.');
+      return;
+    }
+    const form = new FormData();
+    form.append('photo', blob, 'bench.jpg');
+    await run(`${orderUrl(orderId)}/photos`, 'POST', form);
   };
 
   const orderUrl = (id: string) => `/api/atelier/orders/${encodeURIComponent(id)}`;
@@ -135,6 +154,9 @@ export function AtelierView({ initialOrders, staff }: { initialOrders: Order[]; 
           <a className="btn btn-secondary" style={{ padding: '10px 18px', fontSize: 11, letterSpacing: '0.18em' }} href={csvUrl(tab, q)} download>
             Export CSV
           </a>
+          <Link className="btn btn-secondary" style={{ padding: '10px 18px', fontSize: 11, letterSpacing: '0.18em' }} href="/atelier/prices">
+            Prices
+          </Link>
           <SignOutButton />
         </div>
       </div>
@@ -234,7 +256,7 @@ export function AtelierView({ initialOrders, staff }: { initialOrders: Order[]; 
                     <div>{o.lines.map(piecesLabel).join(', ')}</div>
                     {o.lines.some((l) => l.initials) && <div className="flag">Initials</div>}
                   </td>
-                  <td className="tnum" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{money(o.totalEur)}</td>
+                  <td className="tnum" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{money(o.total, o.currency)}</td>
                   <td><span className={tagClass(o)}>{statusLabel(o)}</span></td>
                 </tr>
               ))}
@@ -253,7 +275,8 @@ export function AtelierView({ initialOrders, staff }: { initialOrders: Order[]; 
                 <span className={tagClass(sel)}>{statusLabel(sel)}</span>
               </div>
               <div className="faint" style={{ fontSize: 12, letterSpacing: '0.08em', margin: '4px 0 22px' }}>
-                Placed {fmtDate(sel.placedAt)} · {sel.lines.reduce((n, l) => n + l.qty, 0)} piece(s) · {money(sel.totalEur)} · {sel.payment}
+                Placed {fmtDate(sel.placedAt)} · {sel.lines.reduce((n, l) => n + l.qty, 0)} piece(s) · {money(sel.total, sel.currency)} · {sel.payment}
+                {sel.refundedAt ? ` · Refunded ${fmtDate(sel.refundedAt)}` : ''}
               </div>
 
               <div className="stage-steps">
@@ -271,16 +294,25 @@ export function AtelierView({ initialOrders, staff }: { initialOrders: Order[]; 
 
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 26 }}>
                 {!sel.cancelled && sel.stage !== 'delivered' && (
-                  <button className="btn btn-primary btn-sm" style={{ padding: '10px 16px' }} disabled={busy} onClick={() => run(orderUrl(sel.id), 'PATCH', { action: 'advance' })}>
+                  <button className="btn btn-primary btn-sm" style={{ padding: '10px 16px' }} disabled={busy} onClick={() => {
+                    const next = STAGES[stageIndex(sel.stage) + 1];
+                    if (next === 'stitching' && sel.photos.length === 0 && !window.confirm('No bench photo yet, and the client was promised one before stitching. Mark as stitching anyway?')) return;
+                    void run(orderUrl(sel.id), 'PATCH', { action: 'advance' });
+                  }}>
                     Mark as {STAGE_LABELS[STAGES[stageIndex(sel.stage) + 1]].toLowerCase()}
                   </button>
                 )}
                 {!sel.cancelled && stageIndex(sel.stage) < stageIndex('shipped') && (
-                  <button className="btn btn-ghost" style={{ fontSize: 10.5, letterSpacing: '0.16em' }} disabled={busy} onClick={() => run(orderUrl(sel.id), 'PATCH', { action: 'cancel' })}>
-                    Cancel order
+                  <button className="btn btn-ghost" style={{ fontSize: 10.5, letterSpacing: '0.16em' }} disabled={busy} onClick={() => {
+                    const ask = sel.refundable
+                      ? `Cancel ${sel.id} and refund ${money(sel.total, sel.currency)} to the client's card? The refund cannot be undone.`
+                      : `Cancel ${sel.id}?`;
+                    if (window.confirm(ask)) void run(orderUrl(sel.id), 'PATCH', { action: 'cancel' });
+                  }}>
+                    {sel.refundable ? 'Cancel and refund' : 'Cancel order'}
                   </button>
                 )}
-                {sel.cancelled && (
+                {sel.cancelled && !sel.refundedAt && (
                   <button className="btn btn-secondary btn-sm" style={{ padding: '10px 16px' }} disabled={busy} onClick={() => run(orderUrl(sel.id), 'PATCH', { action: 'restore' })}>
                     Restore order
                   </button>
@@ -303,9 +335,49 @@ export function AtelierView({ initialOrders, staff }: { initialOrders: Order[]; 
                       {strap(l.strap).name} · Initials: <strong style={{ fontWeight: 600, letterSpacing: '0.12em' }}>{l.initials || '—'}</strong>
                     </div>
                   </div>
-                  <div className="tnum" style={{ fontSize: 14 }}>{money(l.unitPriceEur * l.qty)}</div>
+                  <div className="tnum" style={{ fontSize: 14 }}>{money(l.unitPrice * l.qty, sel.currency)}</div>
                 </div>
               ))}
+
+              <div className="micro" style={{ margin: '22px 0 10px' }}>Bench photos</div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                {sel.photos.map((ph) => (
+                  <div key={ph.id} style={{ position: 'relative' }}>
+                    <a href={`/api/orders/${encodeURIComponent(sel.id)}/photos/${ph.id}`} target="_blank" rel="noreferrer">
+                      {/* eslint-disable-next-line @next/next/no-img-element -- private, auth-gated image */}
+                      <img src={`/api/orders/${encodeURIComponent(sel.id)}/photos/${ph.id}`} alt={`Bench photo, ${fmtDate(ph.at)}`} width={84} height={84} style={{ objectFit: 'cover', borderRadius: 4, border: '1px solid var(--color-divider)', display: 'block' }} />
+                    </a>
+                    <button
+                      className="linkish"
+                      aria-label="Delete photo"
+                      style={{ position: 'absolute', top: 2, right: 6, fontSize: 14 }}
+                      disabled={busy}
+                      onClick={() => window.confirm('Delete this photo? The client can no longer see it.') && void run(`${orderUrl(sel.id)}/photos/${ph.id}`, 'DELETE')}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+                {sel.photos.length < 6 && (
+                  <label className="btn btn-secondary btn-sm file-label" style={{ cursor: 'pointer' }}>
+                    {busy ? 'Uploading…' : 'Add photo'}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      disabled={busy}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        e.target.value = '';
+                        if (f) void uploadPhoto(sel.id, f);
+                      }}
+                    />
+                  </label>
+                )}
+              </div>
+              {sel.photos.length === 0 && (
+                <div className="faint" style={{ fontSize: 12.5, marginTop: 6 }}>The client sees these on their order page once uploaded.</div>
+              )}
 
               <div className="two-col" style={{ margin: '22px 0', paddingTop: 18, borderTop: '1px solid var(--color-divider)' }}>
                 <div style={{ fontSize: 13, lineHeight: 1.7 }}>

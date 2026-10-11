@@ -45,7 +45,7 @@ export function OrdersView({ email, orders }: { email: string; orders: Order[] }
                 {o.lines.map((l) => `${getProduct(l.productId)?.name} — ${leather(l.leather).name}`).join(' · ')}
               </span>
               <span className={o.cancelled ? 'tag tag-neutral' : 'tag tag-accent'} style={{ marginLeft: 'auto' }}>{customerStatus(o)}</span>
-              <span className="serif tnum" style={{ fontSize: 20 }}>{money(o.totalEur)}</span>
+              <span className="serif tnum" style={{ fontSize: 20 }}>{money(o.total, o.currency)}</span>
             </div>
             <div className="tracker">
               {TRACK.map((t, i) => {
@@ -58,6 +58,22 @@ export function OrdersView({ email, orders }: { email: string; orders: Order[] }
                 );
               })}
             </div>
+            {o.photos.length > 0 && !o.cancelled && (
+              <div style={{ marginTop: 16 }}>
+                <div className="micro" style={{ marginBottom: 8 }}>From the bench</div>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  {o.photos.map((ph) => (
+                    <a key={ph.id} href={`/api/orders/${encodeURIComponent(o.id)}/photos/${ph.id}`} target="_blank" rel="noreferrer">
+                      {/* eslint-disable-next-line @next/next/no-img-element -- private, auth-gated image */}
+                      <img src={`/api/orders/${encodeURIComponent(o.id)}/photos/${ph.id}`} alt={`Your panels at the bench, ${fmtDate(ph.at)}`} width={120} height={120} style={{ objectFit: 'cover', borderRadius: 4, border: '1px solid var(--color-divider)', display: 'block' }} />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+            {o.cancelled && o.refundedAt && (
+              <div className="faint" style={{ fontSize: 12, marginTop: 14, letterSpacing: '0.08em' }}>Refunded {fmtDate(o.refundedAt)}</div>
+            )}
             {o.tracking && !o.cancelled && (
               <div className="faint tnum" style={{ fontSize: 12, marginTop: 14, letterSpacing: '0.08em' }}>Tracking {o.tracking}</div>
             )}

@@ -25,6 +25,11 @@ describe('order transitions', () => {
     expect(c.cancelled).toBe(true);
     expect(restore(c, '2026-10-11').cancelled).toBe(false);
   });
+
+  it('will not restore a refunded order', () => {
+    const c = { ...cancel(byId('MZ-4512'), 'd'), refundedAt: '2026-10-11' };
+    expect(restore(c, 'd')).toBe(c);
+  });
 });
 
 describe('CSV export', () => {
@@ -33,5 +38,6 @@ describe('CSV export', () => {
     o.customer.name = '=HYPERLINK("http://x","click")';
     const row = ordersCsv([o]).split('\n')[1];
     expect(row.startsWith('"MZ-4521","2026-10-03","\'=HYPERLINK(""http://x"",""click"")"')).toBe(true);
+    expect(row).toContain('"705","EUR","New"');
   });
 });

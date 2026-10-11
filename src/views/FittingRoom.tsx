@@ -5,8 +5,9 @@ import { useEffect, useState } from 'react';
 import { FigureArt, ScaleArt } from '@/components/Art';
 import { BagViewer } from '@/components/BagViewer';
 import { HideSwatches } from '@/components/Options';
-import { colorsFor, getProduct, PRODUCTS, specFor, unitPrice } from '@/lib/catalog';
-import { money } from '@/lib/money';
+import { priceText, usePrices } from '@/components/Prices';
+import { colorsFor, getProduct, PRODUCTS, specFor } from '@/lib/catalog';
+import { basePrice, unitPrice } from '@/lib/pricing';
 import { useShop } from '@/lib/store';
 
 type Mode = 'photo' | 'scale';
@@ -44,7 +45,8 @@ export function FittingRoomView() {
   };
 
   const showBag = mode === 'scale' || !!photo;
-  const price = unitPrice(product, config);
+  const pl = usePrices();
+  const price = unitPrice(pl, product.id, config);
   const stageLabel = mode === 'scale' ? 'Scale preview — desk at 1:1' : photo ? 'Your photograph — drag the bag to turn it' : 'No photograph yet';
   const drop = config.strap === 'as-made' ? '24 cm handle' : config.strap === 'sling' ? '52 cm, adjustable' : '30 cm chain';
   const facts = [
@@ -117,7 +119,7 @@ export function FittingRoomView() {
               return (
                 <button key={p.id} className={on ? 'uline on on-fg' : 'uline'} aria-pressed={on} onClick={() => selectProduct(p.id)}>
                   <span>{p.name}</span>
-                  <span className="faint tnum">{money(p.priceEur)}</span>
+                  <span className="faint tnum">{priceText(basePrice(pl, p.id))}</span>
                 </button>
               );
             })}
@@ -153,12 +155,13 @@ export function FittingRoomView() {
           <div className="btn-row" style={{ gap: 12 }}>
             <button
               className="btn btn-primary btn-md"
+              disabled={price === null}
               onClick={() => {
                 addToCart(product.id);
                 router.push('/bag');
               }}
             >
-              Add to bag — {money(price)}
+              {price === null ? 'Not available in this specification' : `Add to bag — ${priceText(price)}`}
             </button>
             <label className="btn btn-secondary btn-md file-label">
               {photo ? 'Change photograph' : 'Choose a photograph'}

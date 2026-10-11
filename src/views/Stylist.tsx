@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { BagViewer } from '@/components/BagViewer';
 import { colorsFor, stylistPick } from '@/lib/catalog';
-import { money } from '@/lib/money';
+import { priceText, usePrices } from '@/components/Prices';
+import { basePrice } from '@/lib/pricing';
 import { useShop } from '@/lib/store';
 
 const QUESTIONS = [
@@ -20,6 +21,7 @@ export function StylistView() {
   const config = useShop((s) => s.config);
   const answered = answers.filter((a) => a !== null).length;
   const [a, b, c] = answers;
+  const pl = usePrices();
   const pick = a !== null && b !== null && c !== null ? stylistPick(a, b, c) : null;
 
   return (
@@ -60,7 +62,7 @@ export function StylistView() {
                 <BagViewer spec={pick.spec3d} colors={colorsFor(config.leather, config.hardware)} label={`${pick.name}, 3D model`} />
               </div>
               <h2 style={{ fontWeight: 400, marginBottom: 8 }}>{pick.name}</h2>
-              <div className="serif tnum" style={{ fontSize: 24, marginBottom: 12 }}>{money(pick.priceEur)}</div>
+              <div className="serif tnum" style={{ fontSize: 24, marginBottom: 12 }}>{priceText(basePrice(pl, pick.id))}</div>
               <p className="justify">
                 It carries what you said you carry, it holds its shape where you said you go, and the finish sits where you
                 pointed. Turn it above, and change the hide if you disagree.

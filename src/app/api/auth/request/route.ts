@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { createLoginLink, safeNext } from '@/server/auth';
 import { env } from '@/server/env';
 import { readJson } from '@/server/http';
+import { LIMITS, limitByIp } from '@/server/rate-limit';
 import { mailConfigured, sendMail, signInMail } from '@/server/mail';
 
 const input = z.object({
@@ -11,6 +12,8 @@ const input = z.object({
 
 /** Emails a one-time sign-in link. Always answers the same way, so it does not reveal who has orders. */
 export async function POST(req: Request) {
+  const limited = await limitByIp(req, 'sign-in', LIMITS.signIn);
+  if (limited) return limited;
   const body = await readJson(req, input);
   if ('error' in body) return body.error;
   const link = await createLoginLink(body.data.email, safeNext(body.data.next));

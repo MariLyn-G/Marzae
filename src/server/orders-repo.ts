@@ -1,8 +1,9 @@
 import { and, asc, desc, eq, ilike, inArray, or, sql, type SQL } from 'drizzle-orm';
 import type { HardwareId, LeatherId, StrapId } from '@/lib/catalog';
+import type { Currency } from '@/lib/money';
 import { type LineItem, type Order, type Stage, STAGES, orderTotal } from '@/lib/orders';
 import { type Db, db } from './db';
-import { orderEvents, orderLines, orderNotes, orders } from './db/schema';
+import { orderEvents, orderLines, orderNotes, orderPhotos, orders } from './db/schema';
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type Conn = Db | Tx;
@@ -19,8 +20,10 @@ export interface NewOrder {
   customer: { name: string; email: string };
   shipTo: { addr: string; city: string; zip: string; country: string };
   lines: LineItem[];
+  currency: Currency;
   payment: string;
   stripeSessionId?: string;
+  stripePaymentIntent?: string;
 }
 
 /** Reads a `stage` query param: undefined when absent, null when it is not a stage. */
@@ -48,6 +51,11 @@ async function load(conn: Conn, where: SQL | undefined, lock = false): Promise<O
   const lines = await conn.select().from(orderLines).where(inArray(orderLines.orderId, ids)).orderBy(asc(orderLines.position));
   const events = await conn.select().from(orderEvents).where(inArray(orderEvents.orderId, ids)).orderBy(asc(orderEvents.id));
   const notes = await conn.select().from(orderNotes).where(inArray(orderNotes.orderId, ids)).orderBy(asc(orderNotes.id));
+  const photos = await conn
+    .select({ id: orderPhotos.id, orderId: orderPhotos.orderId, at: orderPhotos.at })
+    .from(orderPhotos)
+    .where(inArray(orderPhotos.orderId, ids))
+    .orderBy(asc(orderPhotos.id));
   return rows.map((r) => ({
     id: r.id,
     placedAt: day(r.placedAt),
@@ -62,10 +70,13 @@ async function load(conn: Conn, where: SQL | undefined, lock = false): Promise<O
         strap: l.strap as StrapId,
         initials: l.initials,
         qty: l.qty,
-        unitPriceEur: l.unitPriceEur,
+        unitPrice: l.unitPrice,
       })),
-    totalEur: r.totalEur,
+    currency: r.currency as Currency,
+    total: r.total,
     payment: r.payment,
+    refundable: !!r.stripePaymentIntent && !r.refundedAt,
+    refundedAt: r.refundedAt ? day(r.refundedAt) : null,
     stage: r.stage,
     cancelled: r.cancelled,
     tracking: r.tracking,
@@ -75,6 +86,7 @@ async function load(conn: Conn, where: SQL | undefined, lock = false): Promise<O
     notes: notes
       .filter((n) => n.orderId === r.id)
       .map((n) => ({ body: n.body, at: day(n.at), ...(n.author ? { author: n.author } : {}) })),
+    photos: photos.filter((ph) => ph.orderId === r.id).map((ph) => ({ id: ph.id, at: day(ph.at) })),
   }));
 }
 
@@ -118,9 +130,11 @@ export async function createOrder(conn: Conn, input: NewOrder): Promise<Order> {
     shipCity: input.shipTo.city,
     shipZip: input.shipTo.zip,
     shipCountry: input.shipTo.country,
-    totalEur: orderTotal(input.lines),
+    currency: input.currency,
+    total: orderTotal(input.lines),
     payment: input.payment,
     stripeSessionId: input.stripeSessionId ?? null,
+    stripePaymentIntent: input.stripePaymentIntent ?? null,
   });
   await conn.insert(orderLines).values(input.lines.map((l, position) => ({ orderId: id, position, ...l })));
   await conn.insert(orderEvents).values({ orderId: id, stage: 'new' });
@@ -165,4 +179,13 @@ export async function mutateOrders(ids: string[], fn: (o: Order) => Order, autho
 
 export async function mutateOrder(id: string, fn: (o: Order) => Order, author: string | null): Promise<Change | null> {
   return (await mutateOrders([id], fn, author))[0] ?? null;
+}
+
+/** Payment details the API does not expose on `Order`. */
+export async function paymentOf(id: string): Promise<{ paymentIntent: string | null; refundedAt: Date | null } | null> {
+  const [row] = await db()
+    .select({ paymentIntent: orders.stripePaymentIntent, refundedAt: orders.refundedAt })
+    .from(orders)
+    .where(eq(orders.id, id));
+  return row ?? null;
 }

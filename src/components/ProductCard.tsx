@@ -3,10 +3,11 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { DEFAULT_CONFIG, LEATHERS, type LeatherId, type Product } from '@/lib/catalog';
-import { money } from '@/lib/money';
+import { basePrice } from '@/lib/pricing';
 import { useHydrated, useShop } from '@/lib/store';
 import { BagImage } from './BagImage';
 import { HeartIcon } from './Icons';
+import { priceText, usePrices } from './Prices';
 
 export function WishButton({ productId, className = 'heart' }: { productId: string; className?: string }) {
   const hydrated = useHydrated();
@@ -35,6 +36,7 @@ export function useAddDefault() {
 
 export function ProductCard({ product, leather }: { product: Product; leather?: LeatherId }) {
   const add = useAddDefault();
+  const price = basePrice(usePrices(), product.id);
   return (
     <article className="pcard">
       <div className="media">
@@ -52,13 +54,14 @@ export function ProductCard({ product, leather }: { product: Product; leather?: 
           <span key={l.id} className="dot" style={{ background: l.hex }} title={l.name} />
         ))}
       </div>
-      <span className="price">{money(product.priceEur)}</span>
-      <button className="btn btn-ghost add" onClick={() => add(product.id)}>Add to bag</button>
+      <span className="price">{priceText(price)}</span>
+      <button className="btn btn-ghost add" disabled={price === null} onClick={() => add(product.id)}>Add to bag</button>
     </article>
   );
 }
 
 export function MiniCard({ product }: { product: Product }) {
+  const price = basePrice(usePrices(), product.id);
   return (
     <article className="mini-card">
       <Link href={`/products/${product.id}`} style={{ display: 'block' }}>
@@ -66,7 +69,7 @@ export function MiniCard({ product }: { product: Product }) {
           <BagImage productId={product.id} />
         </div>
         <span className="name">{product.name}</span>
-        <span className="sub tnum">{money(product.priceEur)}</span>
+        <span className="sub tnum">{priceText(price)}</span>
       </Link>
     </article>
   );

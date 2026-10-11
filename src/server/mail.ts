@@ -1,4 +1,5 @@
 import { configLine, getProduct } from '@/lib/catalog';
+import { money } from '@/lib/money';
 import { type Order, STAGE_LABELS, type Stage } from '@/lib/orders';
 import { env } from './env';
 
@@ -52,7 +53,7 @@ export function confirmationMail(o: Order): Mail {
   return {
     to: o.customer.email,
     subject: `Order ${o.id} — on the bench`,
-    text: `${o.customer.name},\n\nWe have your order ${o.id}:\n\n${lines(o)}\n\nTotal €${o.totalEur}. Made to order in six to eight weeks. We write again when the panels are stitched and when the box ships.\n\nTrack it at ${env.appUrl()}/orders`,
+    text: `${o.customer.name},\n\nWe have your order ${o.id}:\n\n${lines(o)}\n\nTotal ${money(o.total, o.currency)}. Made to order in six to eight weeks. We send a photograph of the panels once they are cut, and write again when the box ships.\n\nTrack it at ${env.appUrl()}/orders`,
   };
 }
 
@@ -62,7 +63,11 @@ export function stageMail(o: Order, stage: Stage): Mail | null {
     return {
       to: o.customer.email,
       subject: `Order ${o.id} — ${STAGE_LABELS.stitching.toLowerCase()}`,
-      text: `${o.customer.name},\n\nThe panels for ${o.id} are cut and the stitching has started.\n\n${lines(o)}\n\n${env.appUrl()}/orders`,
+      text: `${o.customer.name},\n\nThe panels for ${o.id} are cut and the stitching has started.\n\n${lines(o)}\n\n${
+        o.photos.length
+          ? `Photographs of your panels from the bench are on your order page: ${env.appUrl()}/orders`
+          : `${env.appUrl()}/orders`
+      }`,
     };
   }
   if (stage === 'shipped') {
@@ -74,4 +79,19 @@ export function stageMail(o: Order, stage: Stage): Mail | null {
     };
   }
   return null;
+}
+
+export function cancellationMail(o: Order, refund: 'refunded' | 'not_needed' | 'failed'): Mail {
+  const money_ = money(o.total, o.currency);
+  const line =
+    refund === 'refunded'
+      ? `We have refunded ${money_} to your card. Banks take five to ten working days to show it.`
+      : refund === 'failed'
+        ? `Your refund of ${money_} is being processed by hand. We write again when it is done.`
+        : '';
+  return {
+    to: o.customer.email,
+    subject: `Order ${o.id} cancelled`,
+    text: `${o.customer.name},\n\nOrder ${o.id} is cancelled.${line ? ' ' + line : ''}\n\nIf this is a surprise, reply to this email.`,
+  };
 }

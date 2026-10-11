@@ -1,13 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { EmptyBagArt } from '@/components/Art';
 import { BagImage } from '@/components/BagImage';
+import { priceText, usePrices } from '@/components/Prices';
 import { configLine, getProduct } from '@/lib/catalog';
 import { money } from '@/lib/money';
-import { orderTotal } from '@/lib/orders';
+import { lineTotal } from '@/lib/pricing';
 import { type CheckoutForm, useHydrated, useShop } from '@/lib/store';
 
 type Step = 0 | 1 | 2;
@@ -38,6 +39,8 @@ export function BagView() {
   const [failure, setFailure] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const sessionId = useSearchParams().get('session_id');
+  const router = useRouter();
+  const pl = usePrices();
   const confirming = !!sessionId && step < 2 && !failure;
 
   // Back from Stripe: wait for the webhook (or the status check) to turn the session into an order.
@@ -68,7 +71,9 @@ export function BagView() {
     };
   }, [sessionId, clearCart]);
 
-  const sub = orderTotal(cart);
+  const totalsByLine = cart.map((l) => lineTotal(pl, l));
+  const unavailable = totalsByLine.some((t) => t === null);
+  const sub = totalsByLine.reduce<number>((n, t) => n + (t ?? 0), 0);
   const errors = { ...serverErrors, ...validate(form) };
   const totals = [
     ['Subtotal', money(sub)],
@@ -99,14 +104,23 @@ export function BagView() {
         body: JSON.stringify({
           lines: cart.map(({ productId, leather, hardware, strap, initials, qty }) => ({ productId, leather, hardware, strap, initials, qty })),
           customer: form,
+          expectedTotal: sub,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as {
         url?: string;
         orderId?: string;
         error?: string;
+        code?: string;
         issues?: { path: string; message: string }[];
       };
+      if (data.code === 'prices_changed' || data.code === 'unavailable') {
+        // Reload the price list from the server, then let the customer look again.
+        router.refresh();
+        setFailure(data.error ?? 'Prices changed. Check the total and try again.');
+        go(0);
+        return;
+      }
       if (data.url) {
         // Stripe Checkout. The cart is cleared when Stripe sends the customer back.
         window.location.assign(data.url);
@@ -184,18 +198,21 @@ export function BagView() {
                     <div className="qty">
                       <button className="sq" aria-label={`One fewer ${p.name}`} onClick={() => setQty(i, l.qty - 1)}>−</button>
                       <span className="tnum" style={{ minWidth: 14, textAlign: 'center' }} aria-label="Quantity">{l.qty}</span>
-                      <button className="sq" aria-label={`One more ${p.name}`} onClick={() => setQty(i, l.qty + 1)}>+</button>
+                      <button className="sq" aria-label={`One more ${p.name}`} disabled={l.qty >= 10} onClick={() => setQty(i, l.qty + 1)}>+</button>
                       <button className="btn btn-ghost" style={{ fontSize: 11 }} onClick={() => removeLine(i)}>Remove</button>
                     </div>
                   </div>
-                  <div className="serif tnum line-total" style={{ fontSize: 20 }}>{money(l.unitPriceEur * l.qty)}</div>
+                  <div className={totalsByLine[i] === null ? 'err line-total' : 'serif tnum line-total'} style={{ fontSize: totalsByLine[i] === null ? 13 : 20 }}>
+                    {priceText(totalsByLine[i])}
+                  </div>
                 </div>
               );
             })}
           </div>
           <div>
             {summary}
-            <button className="btn btn-primary btn-block" style={{ padding: '14px 20px' }} onClick={() => go(1)}>Continue to details →</button>
+            {unavailable && <p className="err" role="alert">Remove the pieces marked not available to continue.</p>}
+            <button className="btn btn-primary btn-block" style={{ padding: '14px 20px' }} disabled={unavailable} onClick={() => go(1)}>Continue to details →</button>
             <p className="muted" style={{ fontSize: 12.5, marginTop: 14 }}>Made to order in Ubrique. Six to eight weeks, tracked from the bench.</p>
           </div>
         </div>

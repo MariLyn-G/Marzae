@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { ChartIcon, CheckShieldIcon, CubeIcon, ShieldIcon, SparkleIcon, TruckIcon, UserIcon } from '@/components/Icons';
 import { ProductCard, useAddDefault } from '@/components/ProductCard';
 import { colorsFor, getProduct, PRODUCTS, REVIEWS, stars } from '@/lib/catalog';
-import { money } from '@/lib/money';
+import { priceText, usePrices } from '@/components/Prices';
+import { basePrice } from '@/lib/pricing';
 import { useStill } from '@/lib/useStill';
 
 const FEATURED = ['aperture-tote', 'meridian-backpack', 'ledger-work-bag', 'slip-crossbody'].map((id) => getProduct(id)!);
@@ -45,6 +46,7 @@ const TRUST = [
 export function HomeView() {
   const add = useAddDefault();
   const hero = PRODUCTS[0];
+  const heroPrice = basePrice(usePrices(), hero.id);
   return (
     <div>
       <section className="hero">
@@ -59,11 +61,11 @@ export function HomeView() {
           Tuscan pits, saddle-stitched by two hands, finished to the hide, hardware and initials you specify.
         </p>
         <div className="price-row">
-          <span className="big">{money(hero.priceEur)}</span>
+          <span className="big">{priceText(heroPrice)}</span>
           <span className="rev">{stars(5)} · {hero.reviewCount} reviews</span>
         </div>
         <div className="btn-row centered">
-          <button className="btn btn-primary btn-lg" onClick={() => add(hero.id)}>Add to bag</button>
+          <button className="btn btn-primary btn-lg" disabled={heroPrice === null} onClick={() => add(hero.id)}>Add to bag</button>
           <Link className="btn btn-ghost btn-lg" style={{ paddingInline: 8 }} href={`/products/${hero.id}`}>Specify in 3D</Link>
         </div>
         <div className="reassure">Made to order · insured delivery · thirty-day return</div>

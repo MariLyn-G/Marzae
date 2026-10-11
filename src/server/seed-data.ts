@@ -1,6 +1,8 @@
 // Seed orders from the design prototype. Used by `npm run db:seed` and tests.
-import { type Configuration, type HardwareId, type LeatherId, type StrapId, getProduct, unitPrice } from '@/lib/catalog';
+import type { Configuration, HardwareId, LeatherId, StrapId } from '@/lib/catalog';
 import { type LineItem, type Order, STAGES, addDays, orderTotal } from '@/lib/orders';
+import { unitPrice } from '@/lib/pricing';
+import { LAUNCH_PRICES_EUR } from './launch-prices';
 
 const STAGE_DAYS = [0, 3, 14, 40, 47];
 
@@ -36,7 +38,7 @@ function hydrate(s: Seed): Order {
       strap: l.strap ?? 'as-made',
       initials: l.initials ?? '',
     };
-    return { productId: l.productId, qty: 1, ...cfg, unitPriceEur: unitPrice(getProduct(l.productId)!, cfg) };
+    return { productId: l.productId, qty: 1, ...cfg, unitPrice: unitPrice(LAUNCH_PRICES_EUR, l.productId, cfg)! };
   });
   const history: Order['history'] = [];
   for (let i = 0; i <= s.stage; i++) history.push({ stage: STAGES[i], at: addDays(s.date, STAGE_DAYS[i]) });
@@ -47,13 +49,17 @@ function hydrate(s: Seed): Order {
     customer: { name: s.name, email: s.email },
     shipTo: { addr: s.addr, city: s.city, zip: s.zip, country: s.country },
     lines,
-    totalEur: orderTotal(lines),
+    currency: 'EUR',
+    total: orderTotal(lines),
     payment: 'Paid — card',
+    refundable: false,
+    refundedAt: null,
     stage: STAGES[s.stage],
     cancelled: !!s.cancelled,
     tracking: s.tracking ?? '',
     history,
     notes: s.notes ?? [],
+    photos: [],
   };
 }
 

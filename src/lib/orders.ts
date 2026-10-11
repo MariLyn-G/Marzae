@@ -1,4 +1,5 @@
 import { type Configuration, getProduct, hardware, leather, strap } from './catalog';
+import type { Currency } from './money';
 
 export type Stage = 'new' | 'cutting' | 'stitching' | 'shipped' | 'delivered';
 export const STAGES: Stage[] = ['new', 'cutting', 'stitching', 'shipped', 'delivered'];
@@ -10,10 +11,15 @@ export const STAGE_LABELS: Record<Stage, string> = {
   delivered: 'Delivered',
 };
 
-export interface LineItem extends Configuration {
+/** A bag line before pricing: what the cart holds. */
+export interface CartLine extends Configuration {
   productId: string;
   qty: number;
-  unitPriceEur: number;
+}
+
+/** A priced line on an order. The price is fixed when the order is placed. */
+export interface LineItem extends CartLine {
+  unitPrice: number;
 }
 
 export interface Order {
@@ -22,13 +28,18 @@ export interface Order {
   customer: { name: string; email: string };
   shipTo: { addr: string; city: string; zip: string; country: string };
   lines: LineItem[];
-  totalEur: number;
+  currency: Currency;
+  total: number;
   payment: string;
+  /** True when the order was paid by card through Stripe and has not been refunded. */
+  refundable: boolean;
+  refundedAt: string | null;
   stage: Stage;
   cancelled: boolean;
   tracking: string;
   history: { stage: Stage | 'cancelled'; at: string }[];
   notes: { body: string; at: string; author?: string }[];
+  photos: { id: number; at: string }[];
 }
 
 export function today(): string {
@@ -52,7 +63,7 @@ export function stageIndex(s: Stage): number {
 }
 
 export function orderTotal(lines: LineItem[]): number {
-  return lines.reduce((n, l) => n + l.unitPriceEur * l.qty, 0);
+  return lines.reduce((n, l) => n + l.unitPrice * l.qty, 0);
 }
 
 export function statusLabel(o: Order): string {
@@ -83,8 +94,9 @@ export function cancel(o: Order, at: string): Order {
   };
 }
 
+/** Refunded orders stay cancelled: the payment is gone, so the client orders again. */
 export function restore(o: Order, at: string): Order {
-  if (!o.cancelled) return o;
+  if (!o.cancelled || o.refundedAt) return o;
   return { ...o, cancelled: false, notes: [...o.notes, { body: 'Order restored.', at }] };
 }
 
@@ -99,7 +111,7 @@ function csvCell(v: string): string {
 }
 
 export function ordersCsv(orders: Order[]): string {
-  const header = ['Order', 'Placed', 'Client', 'Email', 'City', 'Country', 'Pieces', 'Total EUR', 'Status', 'Tracking'];
+  const header = ['Order', 'Placed', 'Client', 'Email', 'City', 'Country', 'Pieces', 'Total', 'Currency', 'Status', 'Tracking'];
   const rows = orders.map((o) => [
     o.id,
     o.placedAt,
@@ -108,7 +120,8 @@ export function ordersCsv(orders: Order[]): string {
     o.shipTo.city,
     o.shipTo.country,
     o.lines.map((l) => `${piecesLabel(l)} (${leather(l.leather).name}${l.initials ? ', ' + l.initials : ''})`).join(' | '),
-    String(o.totalEur),
+    String(o.total),
+    o.currency,
     statusLabel(o),
     o.tracking,
   ]);

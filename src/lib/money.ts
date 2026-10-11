@@ -1,17 +1,20 @@
 export type Currency = 'EUR' | 'USD' | 'GBP';
 
-// Prototype rates. Production should use per-currency price lists or live FX.
-const CURRENCIES: Record<Currency, { symbol: string; rate: number }> = {
-  EUR: { symbol: '€', rate: 1 },
-  USD: { symbol: '$', rate: 1.09 },
-  GBP: { symbol: '£', rate: 0.86 },
-};
+export const CURRENCIES: Currency[] = ['EUR', 'USD', 'GBP'];
 
-export const STORE_CURRENCY: Currency = (process.env.NEXT_PUBLIC_CURRENCY as Currency) in CURRENCIES
-  ? (process.env.NEXT_PUBLIC_CURRENCY as Currency)
-  : 'EUR';
+const SYMBOLS: Record<Currency, string> = { EUR: '€', USD: '$', GBP: '£' };
 
-export function money(eur: number, currency: Currency = STORE_CURRENCY): string {
-  const c = CURRENCIES[currency];
-  return c.symbol + Math.round(eur * c.rate).toLocaleString('en-US');
+export function isCurrency(v: unknown): v is Currency {
+  return typeof v === 'string' && (CURRENCIES as string[]).includes(v);
+}
+
+/**
+ * The currency this deployment sells in. Every price is an explicit amount in this
+ * currency from the price list; nothing is converted.
+ */
+export const STORE_CURRENCY: Currency = isCurrency(process.env.NEXT_PUBLIC_CURRENCY) ? process.env.NEXT_PUBLIC_CURRENCY : 'EUR';
+
+/** Whole-unit amount, e.g. 680 → "€680". */
+export function money(amount: number, currency: Currency = STORE_CURRENCY): string {
+  return SYMBOLS[currency] + Math.round(amount).toLocaleString('en-US');
 }

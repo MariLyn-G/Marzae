@@ -8,9 +8,8 @@ import {
   DEFAULT_CONFIG,
   type LeatherId,
   getProduct,
-  unitPrice,
 } from './catalog';
-import type { LineItem } from './orders';
+import type { CartLine } from './orders';
 
 export interface CheckoutForm {
   name: string;
@@ -36,7 +35,8 @@ interface ShopState {
   query: string;
   // Persisted customer state
   wishlist: string[];
-  cart: LineItem[];
+  // Lines carry no price: it is read from the price list when shown and at checkout.
+  cart: CartLine[];
   form: CheckoutForm;
 
   selectProduct: (id: string) => void;
@@ -72,10 +72,9 @@ export const useShop = create<ShopState>()(
       toggleWish: (id) =>
         set((s) => ({ wishlist: s.wishlist.includes(id) ? s.wishlist.filter((w) => w !== id) : [...s.wishlist, id] })),
       addToCart: (productId, cfg) => {
-        const product = getProduct(productId);
-        if (!product) return;
+        if (!getProduct(productId)) return;
         const c = cfg ?? get().config;
-        const line: LineItem = { productId, ...c, initials: c.initials.trim().toUpperCase(), qty: 1, unitPriceEur: unitPrice(product, c) };
+        const line: CartLine = { productId, ...c, initials: c.initials.trim().toUpperCase(), qty: 1 };
         set((s) => ({ cart: [...s.cart, line] }));
       },
       setQty: (index, qty) =>
@@ -88,11 +87,17 @@ export const useShop = create<ShopState>()(
     }),
     {
       name: 'marzae',
-      // v2: orders moved to the server; drop the local copy.
-      version: 2,
+      // v2: orders moved to the server. v3: cart lines no longer store a price.
+      version: 3,
       migrate: (state) => {
         const { orders: _orders, ...rest } = (state ?? {}) as Record<string, unknown>;
         void _orders;
+        const cart = Array.isArray(rest.cart) ? rest.cart : [];
+        rest.cart = cart.map((l: Record<string, unknown>) => {
+          const { unitPriceEur: _price, ...line } = l;
+          void _price;
+          return line;
+        });
         return rest as unknown as ShopState;
       },
       storage: createJSONStorage(() => localStorage),

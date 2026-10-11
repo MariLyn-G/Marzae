@@ -19,8 +19,9 @@ export function checkoutSessionParams(p: CheckoutPayload): Stripe.Checkout.Sessi
     line_items: p.lines.map((l) => ({
       quantity: l.qty,
       price_data: {
-        currency: 'eur',
-        unit_amount: l.unitPriceEur * 100,
+        // EUR, USD and GBP all have two decimals; amounts are whole units.
+        currency: p.currency.toLowerCase(),
+        unit_amount: l.unitPrice * 100,
         product_data: { name: getProduct(l.productId)!.name, description: configLine(l) },
       },
     })),

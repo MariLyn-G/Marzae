@@ -2,6 +2,8 @@ import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { advance, cancel, type Order, restore, today } from '@/lib/orders';
 import { notifyStageChanges } from '@/server/fulfil';
+import { cancellationMail, sendMail } from '@/server/mail';
+import { refundOrder } from '@/server/refunds';
 import { jsonError, readJson, requireAtelier } from '@/server/http';
 import { getOrder, mutateOrder } from '@/server/orders-repo';
 
@@ -41,11 +43,25 @@ export async function PATCH(req: NextRequest, ctx: RouteContext<'/api/atelier/or
           ? (o) => restore(o, at)
           : (o) => (o.tracking === tracking ? o : { ...o, tracking: tracking! });
 
-  const change = await mutateOrder((await ctx.params).id, fn, auth.session.email);
+  const id = (await ctx.params).id;
+  const change = await mutateOrder(id, fn, auth.session.email);
   if (!change) return jsonError(404, 'No such order');
   if (action && change.after === change.before) {
-    return jsonError(409, `Cannot ${action} this order in its current state`, { order: change.before });
+    const why =
+      action === 'restore' && change.before.refundedAt
+        ? 'This order was refunded, so it stays cancelled. The client can order again.'
+        : `Cannot ${action} this order in its current state`;
+    return jsonError(409, why, { order: change.before });
   }
+
+  if (action === 'cancel') {
+    // Only the request that cancelled the order reaches this point, so it refunds once.
+    const refund = await refundOrder(change.after, auth.session.email);
+    await sendMail(cancellationMail(change.after, refund.status));
+    const order = (await getOrder(id))!;
+    return Response.json({ order, refund: refund.status, ...(refund.status === 'failed' ? { warning: `Cancelled, but the refund failed: ${refund.message} Refund it in the Stripe dashboard.` } : {}) });
+  }
+
   await notifyStageChanges([change]);
   return Response.json({ order: change.after });
 }
