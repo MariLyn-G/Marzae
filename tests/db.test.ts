@@ -11,7 +11,7 @@ describe.skipIf(!url)('database', async () => {
   const { db } = await import('@/server/db');
   const repo = await import('@/server/orders-repo');
   const { fulfilCheckout } = await import('@/server/fulfil');
-  const { checkouts, orderNotes } = await import('@/server/db/schema');
+  const { checkouts } = await import('@/server/db/schema');
   const { LAUNCH_PRICES_EUR } = await import('@/server/launch-prices');
   const prices = await import('@/server/prices');
   const refunds = await import('@/server/refunds');
@@ -51,7 +51,7 @@ describe.skipIf(!url)('database', async () => {
     const o = await place();
     expect(o.id).toMatch(/^MZ-\d+$/);
     expect(o.customer.email).toBe('iris@studio.nl');
-    expect(o).toMatchObject({ total: 415, currency: 'EUR', refundable: false, refundedAt: null, photos: [] });
+    expect(o).toMatchObject({ total: 415, currency: 'EUR', refundable: false, refundedAt: null, refundedAmount: 0, photos: [] });
     expect(o.lines[0]).toMatchObject({ productId: 'slip-crossbody', initials: 'IV', unitPrice: 415 });
     expect(o.history.map((h) => h.stage)).toEqual(['new']);
   });
@@ -143,7 +143,7 @@ describe.skipIf(!url)('database', async () => {
       expect(await refunds.refundOrder(c!.after, 'bench@marzae.com', client)).toEqual({ status: 'refunded', refundId: 're_1' });
       expect(calls).toEqual([expect.objectContaining({ payment_intent: 'pi_123', metadata: { order_id: o.id } })]);
       const after = (await repo.getOrder(o.id))!;
-      expect(after).toMatchObject({ refundable: false, cancelled: true });
+      expect(after).toMatchObject({ refundable: false, cancelled: true, refundedAmount: 415 });
       expect(after.refundedAt).not.toBeNull();
       expect(after.notes.at(-1)!.body).toBe('Refunded €415 to the card (re_1).');
       // A second attempt does not call Stripe again.
@@ -171,19 +171,40 @@ describe.skipIf(!url)('database', async () => {
       expect(calls).toHaveLength(0);
     });
 
-    it('syncs a full refund made in the Stripe dashboard, once', async () => {
+    const charge = (pi: string, refundedCents: number, full: boolean) =>
+      ({ payment_intent: pi, amount_refunded: refundedCents, refunded: full, refunds: { data: [{ id: 're_dash' }] } }) as never;
+    const notesOf = async (id: string) => (await repo.getOrder(id))!.notes.map((n) => n.body);
+
+    it('syncs dashboard refunds, partial then full, and ignores retries', async () => {
       const o = await place('pi_789');
-      const charge = { payment_intent: 'pi_789', refunded: true, refunds: { data: [{ id: 're_dash' }] } } as never;
-      await refunds.syncChargeRefund(charge);
-      await refunds.syncChargeRefund(charge);
+      await refunds.syncChargeRefund(charge('pi_789', 10_000, false));
+      await refunds.syncChargeRefund(charge('pi_789', 10_000, false)); // Stripe retry
+      let after = (await repo.getOrder(o.id))!;
+      expect(after).toMatchObject({ refundedAmount: 100, refundedAt: null, refundable: true });
+      expect(await notesOf(o.id)).toEqual(['Stripe reports €100 of €415 refunded so far.']);
+
+      await refunds.syncChargeRefund(charge('pi_789', 41_500, true));
+      await refunds.syncChargeRefund(charge('pi_789', 41_500, true));
+      after = (await repo.getOrder(o.id))!;
+      expect(after).toMatchObject({ refundedAmount: 415, refundable: false });
+      expect(after.refundedAt).not.toBeNull();
+      expect(await notesOf(o.id)).toEqual(['Stripe reports €100 of €415 refunded so far.', 'Stripe reports this payment refunded in full.']);
+    });
+
+    it('cancelling after a partial refund refunds the rest, and the webhook echo adds nothing', async () => {
+      const o = await place('pi_part');
+      await refunds.syncChargeRefund(charge('pi_part', 5_000, false));
+      const { client } = fakeStripe(async () => ({ id: 're_rest' }));
+      const c = await repo.mutateOrder(o.id, (x) => cancel(x, 'd'), null);
+      expect((await refunds.refundOrder(c!.after, 'bench@marzae.com', client)).status).toBe('refunded');
+      await refunds.syncChargeRefund(charge('pi_part', 41_500, true)); // Stripe's echo of our refund
       const after = (await repo.getOrder(o.id))!;
-      expect(after.refundable).toBe(false);
-      const notes = await db().select().from(orderNotes);
-      expect(notes.filter((n) => n.body.includes('Stripe reports'))).toHaveLength(1);
-      // Partial refunds are left alone.
-      const p = await place('pi_part');
-      await refunds.syncChargeRefund({ payment_intent: 'pi_part', refunded: false } as never);
-      expect((await repo.getOrder(p.id))!.refundable).toBe(true);
+      expect(after).toMatchObject({ refundedAmount: 415, refundable: false });
+      expect(await notesOf(o.id)).toEqual([
+        'Stripe reports €50 of €415 refunded so far.',
+        'Order cancelled from the back office.',
+        'Refunded €365 to the card (re_rest).',
+      ]);
     });
   });
 

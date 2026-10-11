@@ -71,8 +71,10 @@ export function OrdersView({ email, orders }: { email: string; orders: Order[] }
                 </div>
               </div>
             )}
-            {o.cancelled && o.refundedAt && (
-              <div className="faint" style={{ fontSize: 12, marginTop: 14, letterSpacing: '0.08em' }}>Refunded {fmtDate(o.refundedAt)}</div>
+            {(o.refundedAt || o.refundedAmount > 0) && (
+              <div className="faint" style={{ fontSize: 12, marginTop: 14, letterSpacing: '0.08em' }}>
+                {o.refundedAt ? `Refunded ${fmtDate(o.refundedAt)}` : `${money(o.refundedAmount, o.currency)} refunded`}
+              </div>
             )}
             {o.tracking && !o.cancelled && (
               <div className="faint tnum" style={{ fontSize: 12, marginTop: 14, letterSpacing: '0.08em' }}>Tracking {o.tracking}</div>

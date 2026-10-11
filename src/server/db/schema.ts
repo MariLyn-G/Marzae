@@ -43,7 +43,10 @@ export const orders = pgTable(
     tracking: text('tracking').notNull().default(''),
     stripeSessionId: text('stripe_session_id'),
     stripePaymentIntent: text('stripe_payment_intent'),
+    // Set once the payment is refunded in full.
     refundedAt: timestamp('refunded_at', { withTimezone: true }),
+    // Whole units refunded so far, full or partial.
+    refundedAmount: integer('refunded_amount').notNull().default(0),
     refundId: text('refund_id'),
   },
   (t) => [

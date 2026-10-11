@@ -56,7 +56,7 @@ All bodies are JSON. Atelier routes need a session whose email is in `ATELIER_EM
 | `GET /api/products`, `GET /api/products/:id` | Catalogue |
 | `POST /api/checkout` | `{ lines, customer, expectedTotal }`. Prices from the database. 409 if prices changed or an item is off sale. Returns `{ url }` (Stripe) or `{ orderId }` (no Stripe) |
 | `GET /api/checkout/status?session_id=` | Order id for a Stripe session; fulfils it if paid and the webhook has not arrived |
-| `POST /api/stripe/webhook` | `checkout.session.completed` → creates the order, once per session. `charge.refunded` → marks dashboard refunds on the order |
+| `POST /api/stripe/webhook` | `checkout.session.completed` → creates the order, once per session. `charge.refunded` → records dashboard refunds on the order, full or partial |
 | `POST /api/auth/request` | `{ email, next }` → emails a one-time link (15 min, one per 30 s per email) |
 | `GET /api/auth/verify?token=` | Sets the session cookie (14 days) and redirects to `next` |
 | `POST /api/auth/signout` | Clears the cookie |
@@ -102,11 +102,10 @@ Production refuses to start a checkout without Stripe unless `ALLOW_UNPAID_ORDER
 
 ## Known gaps
 
-- **Partial refunds** are done in the Stripe dashboard and are not reflected on the order. Full refunds from the dashboard are.
+- **Partial refunds** are made in the Stripe dashboard. The order shows the amount refunded so far; cancelling it later refunds the rest.
 - **Page-level flooding** (scrapers, DDoS) belongs to the CDN or WAF in front of the app. The app limits only the endpoints that cost money or send email.
 - **Bench photos are stored in Postgres.** Fine at ~300 KB each for a workshop's volume; move to object storage (S3, R2) past tens of thousands.
 - **Product details live in code** (`src/lib/catalog.ts`): names, copy, dimensions and the 3D spec. Prices do not. A new style needs a 3D model anyway, so it ships with a deploy.
 - **The atelier loads every order** and filters in the browser. Fine for a workshop's volume; add paging past a few thousand orders.
-- **Footer copy** still says "Prototype — no real transactions". Change it before taking payments.
 - **Imagery is rendered from the 3D models.** Lookbook slots are placeholders; replace with photography and artist-made GLB models.
 - **Try-on placement is manual.** The handoff suggests MediaPipe Pose for auto-placement. Photos stay in the browser.

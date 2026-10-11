@@ -33,7 +33,10 @@ export interface Order {
   payment: string;
   /** True when the order was paid by card through Stripe and has not been refunded. */
   refundable: boolean;
+  /** Set when the payment is refunded in full. */
   refundedAt: string | null;
+  /** Refunded so far, full or partial, in `currency`. */
+  refundedAmount: number;
   stage: Stage;
   cancelled: boolean;
   tracking: string;

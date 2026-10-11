@@ -54,6 +54,7 @@ function hydrate(s: Seed): Order {
     payment: 'Paid — card',
     refundable: false,
     refundedAt: null,
+    refundedAmount: 0,
     stage: STAGES[s.stage],
     cancelled: !!s.cancelled,
     tracking: s.tracking ?? '',

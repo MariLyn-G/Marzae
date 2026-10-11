@@ -276,7 +276,11 @@ export function AtelierView({ initialOrders, staff }: { initialOrders: Order[]; 
               </div>
               <div className="faint" style={{ fontSize: 12, letterSpacing: '0.08em', margin: '4px 0 22px' }}>
                 Placed {fmtDate(sel.placedAt)} · {sel.lines.reduce((n, l) => n + l.qty, 0)} piece(s) · {money(sel.total, sel.currency)} · {sel.payment}
-                {sel.refundedAt ? ` · Refunded ${fmtDate(sel.refundedAt)}` : ''}
+                {sel.refundedAt
+                  ? ` · Refunded ${fmtDate(sel.refundedAt)}`
+                  : sel.refundedAmount > 0
+                    ? ` · ${money(sel.refundedAmount, sel.currency)} refunded so far`
+                    : ''}
               </div>
 
               <div className="stage-steps">
@@ -305,7 +309,7 @@ export function AtelierView({ initialOrders, staff }: { initialOrders: Order[]; 
                 {!sel.cancelled && stageIndex(sel.stage) < stageIndex('shipped') && (
                   <button className="btn btn-ghost" style={{ fontSize: 10.5, letterSpacing: '0.16em' }} disabled={busy} onClick={() => {
                     const ask = sel.refundable
-                      ? `Cancel ${sel.id} and refund ${money(sel.total, sel.currency)} to the client's card? The refund cannot be undone.`
+                      ? `Cancel ${sel.id} and refund ${money(sel.total - sel.refundedAmount, sel.currency)} to the client's card? The refund cannot be undone.`
                       : `Cancel ${sel.id}?`;
                     if (window.confirm(ask)) void run(orderUrl(sel.id), 'PATCH', { action: 'cancel' });
                   }}>

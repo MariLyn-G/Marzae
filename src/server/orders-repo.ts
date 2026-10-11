@@ -77,6 +77,7 @@ async function load(conn: Conn, where: SQL | undefined, lock = false): Promise<O
     payment: r.payment,
     refundable: !!r.stripePaymentIntent && !r.refundedAt,
     refundedAt: r.refundedAt ? day(r.refundedAt) : null,
+    refundedAmount: r.refundedAmount,
     stage: r.stage,
     cancelled: r.cancelled,
     tracking: r.tracking,
@@ -182,9 +183,11 @@ export async function mutateOrder(id: string, fn: (o: Order) => Order, author: s
 }
 
 /** Payment details the API does not expose on `Order`. */
-export async function paymentOf(id: string): Promise<{ paymentIntent: string | null; refundedAt: Date | null } | null> {
+export async function paymentOf(
+  id: string,
+): Promise<{ paymentIntent: string | null; refundedAt: Date | null; refundedAmount: number } | null> {
   const [row] = await db()
-    .select({ paymentIntent: orders.stripePaymentIntent, refundedAt: orders.refundedAt })
+    .select({ paymentIntent: orders.stripePaymentIntent, refundedAt: orders.refundedAt, refundedAmount: orders.refundedAmount })
     .from(orders)
     .where(eq(orders.id, id));
   return row ?? null;

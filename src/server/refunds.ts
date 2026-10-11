@@ -1,7 +1,6 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type Stripe from 'stripe';
-import { money } from '@/lib/money';
-import type { Currency } from '@/lib/money';
+import { type Currency, money } from '@/lib/money';
 import { db } from './db';
 import { orderNotes, orders } from './db/schema';
 import { paymentOf } from './orders-repo';
@@ -11,16 +10,39 @@ export type RefundResult = { status: 'refunded'; refundId: string } | { status: 
 
 type RefundClient = Pick<Stripe, 'refunds'>;
 
-/** Records a refund once. Returns false if the order was already marked refunded. */
-export async function markRefunded(orderId: string, refundId: string, note: string, author: string | null): Promise<boolean> {
+interface RefundRecord {
+  /** Total refunded on the payment so far, in whole units. */
+  refundedSoFar: number;
+  /** True once nothing is left to refund. */
+  full: boolean;
+  refundId: string | null;
+  note: string;
+  author: string | null;
+}
+
+/**
+ * Records refunded money on an order under a row lock. Only a rise in the refunded total
+ * (or the payment becoming fully refunded) writes anything, so Stripe's webhook retries and
+ * the webhook that echoes our own refund do not add notes twice. Returns whether it wrote.
+ */
+export async function recordRefund(orderId: string, r: RefundRecord): Promise<boolean> {
   return db().transaction(async (tx) => {
-    const updated = await tx
+    const [row] = await tx
+      .select({ refundedAmount: orders.refundedAmount, refundedAt: orders.refundedAt })
+      .from(orders)
+      .where(eq(orders.id, orderId))
+      .for('update');
+    if (!row) return false;
+    const newlyFull = r.full && !row.refundedAt;
+    if (r.refundedSoFar <= row.refundedAmount && !newlyFull) return false;
+    await tx
       .update(orders)
-      .set({ refundedAt: new Date(), refundId })
-      .where(and(eq(orders.id, orderId), isNull(orders.refundedAt)))
-      .returning({ id: orders.id });
-    if (updated.length === 0) return false;
-    await tx.insert(orderNotes).values({ orderId, body: note, author });
+      .set({
+        refundedAmount: Math.max(row.refundedAmount, r.refundedSoFar),
+        ...(newlyFull ? { refundedAt: new Date(), refundId: r.refundId } : {}),
+      })
+      .where(eq(orders.id, orderId));
+    await tx.insert(orderNotes).values({ orderId, body: r.note, author: r.author });
     return true;
   });
 }
@@ -38,6 +60,8 @@ export async function refundOrder(
 ): Promise<RefundResult> {
   const pay = await paymentOf(order.id);
   if (!pay?.paymentIntent || pay.refundedAt) return { status: 'not_needed' };
+  // Stripe refunds whatever is left when no amount is given; a dashboard partial refund may have come first.
+  const remaining = order.total - pay.refundedAmount;
 
   const fail = async (message: string): Promise<RefundResult> => {
     await db()
@@ -53,7 +77,13 @@ export async function refundOrder(
       reason: 'requested_by_customer',
       metadata: { order_id: order.id },
     });
-    await markRefunded(order.id, refund.id, `Refunded ${money(order.total, order.currency)} to the card (${refund.id}).`, author);
+    await recordRefund(order.id, {
+      refundedSoFar: order.total,
+      full: true,
+      refundId: refund.id,
+      note: `Refunded ${money(remaining, order.currency)} to the card (${refund.id}).`,
+      author,
+    });
     return { status: 'refunded', refundId: refund.id };
   } catch (err) {
     return fail(err instanceof Error ? err.message.replace(/\.?$/, '.') : 'Stripe did not accept the refund.');
@@ -61,14 +91,28 @@ export async function refundOrder(
 }
 
 /**
- * Webhook `charge.refunded`: keeps the order in step with refunds made in the Stripe dashboard.
- * It also fires for our own refunds; whichever records first wins, so the note stays neutral.
+ * Webhook `charge.refunded`: keeps the order in step with refunds made in the Stripe
+ * dashboard, full or partial. It also fires for our own refunds; those are already
+ * recorded, so it writes nothing.
  */
 export async function syncChargeRefund(charge: Stripe.Charge): Promise<void> {
   const pi = typeof charge.payment_intent === 'string' ? charge.payment_intent : charge.payment_intent?.id;
-  if (!pi || !charge.refunded) return; // partial refunds stay a dashboard matter
-  const [row] = await db().select({ id: orders.id }).from(orders).where(eq(orders.stripePaymentIntent, pi));
+  if (!pi || !charge.amount_refunded) return;
+  const [row] = await db()
+    .select({ id: orders.id, total: orders.total, currency: orders.currency })
+    .from(orders)
+    .where(eq(orders.stripePaymentIntent, pi));
   if (!row) return;
-  const refundId = charge.refunds?.data[0]?.id ?? 'stripe-dashboard';
-  await markRefunded(row.id, refundId, 'Stripe reports this payment refunded in full.', 'stripe');
+  const currency = row.currency as Currency;
+  // Stripe counts in cents; the shop counts in whole units.
+  const soFar = Math.round(charge.amount_refunded / 100);
+  await recordRefund(row.id, {
+    refundedSoFar: soFar,
+    full: charge.refunded,
+    refundId: charge.refunds?.data[0]?.id ?? null,
+    note: charge.refunded
+      ? 'Stripe reports this payment refunded in full.'
+      : `Stripe reports ${money(soFar, currency)} of ${money(row.total, currency)} refunded so far.`,
+    author: 'stripe',
+  });
 }
