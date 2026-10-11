@@ -1,0 +1,14 @@
+# Local Postgres for development: `docker compose up -d`
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: marzae
+      POSTGRES_PASSWORD: marzae
+      POSTGRES_DB: marzae
+    ports:
+      - '5432:5432'
+    volumes:
+      - marzae-db:/var/lib/postgresql/data
+volumes:
+  marzae-db:
