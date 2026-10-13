@@ -1,12 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import { EmptyBagArt } from '@/components/Art';
 import { BagImage } from '@/components/BagImage';
+import { priceText, usePrices } from '@/components/Prices';
 import { configLine, getProduct } from '@/lib/catalog';
 import { money } from '@/lib/money';
-import { orderTotal } from '@/lib/orders';
+import { lineTotal } from '@/lib/pricing';
 import { type CheckoutForm, useHydrated, useShop } from '@/lib/store';
 
 type Step = 0 | 1 | 2;
@@ -29,13 +31,50 @@ function validate(form: CheckoutForm): Partial<Record<keyof CheckoutForm, string
 
 export function BagView() {
   const hydrated = useHydrated();
-  const { cart, form, setQty, removeLine, setForm, placeOrder } = useShop();
+  const { cart, form, setQty, removeLine, setForm, clearCart } = useShop();
   const [step, setStep] = useState<Step>(0);
   const [lastOrder, setLastOrder] = useState<string | null>(null);
   const [showErrors, setShowErrors] = useState(false);
+  const [serverErrors, setServerErrors] = useState<Partial<Record<keyof CheckoutForm, string>>>({});
+  const [failure, setFailure] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const sessionId = useSearchParams().get('session_id');
+  const router = useRouter();
+  const pl = usePrices();
+  const confirming = !!sessionId && step < 2 && !failure;
 
-  const sub = orderTotal(cart);
-  const errors = validate(form);
+  // Back from Stripe: wait for the webhook (or the status check) to turn the session into an order.
+  useEffect(() => {
+    if (!sessionId) return;
+    let stopped = false;
+    let tries = 0;
+    const poll = async () => {
+      if (stopped) return;
+      tries++;
+      const res = await fetch(`/api/checkout/status?session_id=${encodeURIComponent(sessionId)}`).catch(() => null);
+      const data = res?.ok ? ((await res.json()) as { orderId: string | null }) : null;
+      if (stopped) return;
+      if (data?.orderId) {
+        clearCart();
+        setLastOrder(data.orderId);
+        setStep(2);
+        window.history.replaceState(null, '', '/bag');
+      } else if (tries < 20) {
+        setTimeout(poll, 1500);
+      } else {
+        setFailure('Payment received, but the order number is taking a while. It will appear under Orders, and we email you when it does.');
+      }
+    };
+    void poll();
+    return () => {
+      stopped = true;
+    };
+  }, [sessionId, clearCart]);
+
+  const totalsByLine = cart.map((l) => lineTotal(pl, l));
+  const unavailable = totalsByLine.some((t) => t === null);
+  const sub = totalsByLine.reduce<number>((n, t) => n + (t ?? 0), 0);
+  const errors = { ...serverErrors, ...validate(form) };
   const totals = [
     ['Subtotal', money(sub)],
     ['Made to order', 'Six to eight weeks'],
@@ -43,23 +82,68 @@ export function BagView() {
     ['Total', money(sub)],
   ];
   const heading = step === 2 ? 'Thank you' : step === 1 ? 'Where it goes' : 'Your bag';
-  const empty = hydrated && cart.length === 0 && step < 2;
+  const empty = hydrated && cart.length === 0 && step < 2 && !confirming;
 
   const go = (s: Step) => {
     setStep(s);
     window.scrollTo(0, 0);
   };
 
-  const submit = () => {
-    if (Object.keys(errors).length) {
+  const submit = async () => {
+    if (Object.keys(validate(form)).length) {
       setShowErrors(true);
       return;
     }
-    // Production: create a Stripe Checkout session here; the order is written as `new` by the webhook.
-    const id = placeOrder();
-    if (id) {
-      setLastOrder(id);
-      go(2);
+    setBusy(true);
+    setFailure(null);
+    setServerErrors({});
+    try {
+      const res = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lines: cart.map(({ productId, leather, hardware, strap, initials, qty }) => ({ productId, leather, hardware, strap, initials, qty })),
+          customer: form,
+          expectedTotal: sub,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        url?: string;
+        orderId?: string;
+        error?: string;
+        code?: string;
+        issues?: { path: string; message: string }[];
+      };
+      if (data.code === 'prices_changed' || data.code === 'unavailable') {
+        // Reload the price list from the server, then let the customer look again.
+        router.refresh();
+        setFailure(data.error ?? 'Prices changed. Check the total and try again.');
+        go(0);
+        return;
+      }
+      if (data.url) {
+        // Stripe Checkout. The cart is cleared when Stripe sends the customer back.
+        window.location.assign(data.url);
+        return;
+      }
+      if (res.ok && data.orderId) {
+        clearCart();
+        setLastOrder(data.orderId);
+        go(2);
+      } else {
+        const fieldErrs: Partial<Record<keyof CheckoutForm, string>> = {};
+        for (const i of data.issues ?? []) {
+          const key = i.path.replace(/^customer\./, '') as keyof CheckoutForm;
+          if (FIELDS.some((f) => f.key === key)) fieldErrs[key] = i.message;
+        }
+        setServerErrors(fieldErrs);
+        setShowErrors(true);
+        setFailure(Object.keys(fieldErrs).length ? null : data.error ?? 'The order did not go through. Try again in a moment.');
+      }
+    } catch {
+      setFailure('Could not reach the atelier. Check your connection and try again.');
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -97,7 +181,7 @@ export function BagView() {
         </div>
       )}
 
-      {hydrated && cart.length > 0 && step === 0 && (
+      {hydrated && cart.length > 0 && step === 0 && !confirming && (
         <div className="split split-cart">
           <div>
             {cart.map((l, i) => {
@@ -114,18 +198,21 @@ export function BagView() {
                     <div className="qty">
                       <button className="sq" aria-label={`One fewer ${p.name}`} onClick={() => setQty(i, l.qty - 1)}>−</button>
                       <span className="tnum" style={{ minWidth: 14, textAlign: 'center' }} aria-label="Quantity">{l.qty}</span>
-                      <button className="sq" aria-label={`One more ${p.name}`} onClick={() => setQty(i, l.qty + 1)}>+</button>
+                      <button className="sq" aria-label={`One more ${p.name}`} disabled={l.qty >= 10} onClick={() => setQty(i, l.qty + 1)}>+</button>
                       <button className="btn btn-ghost" style={{ fontSize: 11 }} onClick={() => removeLine(i)}>Remove</button>
                     </div>
                   </div>
-                  <div className="serif tnum line-total" style={{ fontSize: 20 }}>{money(l.unitPriceEur * l.qty)}</div>
+                  <div className={totalsByLine[i] === null ? 'err line-total' : 'serif tnum line-total'} style={{ fontSize: totalsByLine[i] === null ? 13 : 20 }}>
+                    {priceText(totalsByLine[i])}
+                  </div>
                 </div>
               );
             })}
           </div>
           <div>
             {summary}
-            <button className="btn btn-primary btn-block" style={{ padding: '14px 20px' }} onClick={() => go(1)}>Continue to details →</button>
+            {unavailable && <p className="err" role="alert">Remove the pieces marked not available to continue.</p>}
+            <button className="btn btn-primary btn-block" style={{ padding: '14px 20px' }} disabled={unavailable} onClick={() => go(1)}>Continue to details →</button>
             <p className="muted" style={{ fontSize: 12.5, marginTop: 14 }}>Made to order in Ubrique. Six to eight weeks, tracked from the bench.</p>
           </div>
         </div>
@@ -137,7 +224,7 @@ export function BagView() {
           noValidate
           onSubmit={(e) => {
             e.preventDefault();
-            submit();
+            void submit();
           }}
         >
           <div className="form-grid">
@@ -154,7 +241,10 @@ export function BagView() {
                     placeholder={f.ph}
                     value={form[f.key]}
                     aria-invalid={!!err}
-                    onChange={(e) => setForm({ [f.key]: e.target.value })}
+                    onChange={(e) => {
+                      setForm({ [f.key]: e.target.value });
+                      if (serverErrors[f.key]) setServerErrors({ ...serverErrors, [f.key]: undefined });
+                    }}
                   />
                   {err && <div className="err">{err}</div>}
                 </div>
@@ -163,10 +253,21 @@ export function BagView() {
           </div>
           <div>
             {summary}
-            <button type="submit" className="btn btn-primary btn-block" style={{ padding: '14px 20px' }}>Place the order →</button>
+            <button type="submit" className="btn btn-primary btn-block" style={{ padding: '14px 20px' }} disabled={busy} aria-busy={busy}>
+              {busy ? 'Placing the order…' : 'Place the order →'}
+            </button>
+            {failure && <div className="err" role="alert" style={{ marginTop: 12 }}>{failure}</div>}
             <button type="button" className="btn btn-ghost" style={{ marginTop: 10, fontSize: 11 }} onClick={() => go(0)}>Back to the bag</button>
           </div>
         </form>
+      )}
+
+      {confirming && (
+        <div className="muted" style={{ padding: '48px 0' }} role="status">Confirming your payment…</div>
+      )}
+
+      {!confirming && failure && step === 0 && (
+        <div className="err" role="alert" style={{ padding: '24px 0' }}>{failure}</div>
       )}
 
       {step === 2 && (

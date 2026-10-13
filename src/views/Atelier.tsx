@@ -1,18 +1,18 @@
 'use client';
 
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { SignOutButton } from '@/components/SignIn';
 import { BagImage } from '@/components/BagImage';
 import { getProduct, hardware, leather, strap } from '@/lib/catalog';
-import { money } from '@/lib/money';
+import { downscaleImage } from '@/lib/downscale';
+import { type Currency, money } from '@/lib/money';
 import {
   addDays,
-  advance,
-  cancel,
   fmtDate,
   type Order,
-  ordersCsv,
   piecesLabel,
-  restore,
   STAGE_LABELS,
   STAGES,
   stageIndex,
@@ -20,10 +20,9 @@ import {
   tagClass,
   today,
 } from '@/lib/orders';
-import { useHydrated, useShop } from '@/lib/store';
 
-// Production: this route sits behind auth (role `atelier`) and reads/writes through
-// /api/atelier/orders. Here it edits the same client-side store the checkout writes to.
+// Server-rendered behind the `atelier` role (see app/atelier/page.tsx). Every change goes
+// through /api/atelier/orders and the returned order replaces the local copy.
 
 const TABS = ['All', 'New', 'Cutting', 'Stitching', 'Shipped', 'Delivered', 'Cancelled'] as const;
 type Tab = (typeof TABS)[number];
@@ -34,22 +33,37 @@ function matches(o: Order, t: Tab): boolean {
   return !o.cancelled && STAGE_LABELS[o.stage] === t;
 }
 
-function download(name: string, body: string) {
-  const url = URL.createObjectURL(new Blob([body], { type: 'text/csv;charset=utf-8' }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+function csvUrl(tab: Tab, q: string): string {
+  const qs = new URLSearchParams();
+  if (tab !== 'All') qs.set('stage', tab.toLowerCase());
+  if (q.trim()) qs.set('q', q.trim());
+  const s = qs.toString();
+  return '/api/atelier/orders.csv' + (s ? '?' + s : '');
 }
 
-export function AtelierView() {
-  const hydrated = useHydrated();
-  const orders = useShop((s) => s.orders);
-  const updateOrder = useShop((s) => s.updateOrder);
-  const updateOrders = useShop((s) => s.updateOrders);
+type Result = { order?: Order; orders?: Order[]; error?: string; warning?: string; signedOut?: boolean };
+
+async function call(url: string, method: string, body?: unknown): Promise<Result> {
+  try {
+    const form = body instanceof FormData;
+    const res = await fetch(url, {
+      method,
+      headers: body === undefined || form ? undefined : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : form ? body : JSON.stringify(body),
+    });
+    if (res.status === 401) return { signedOut: true, error: 'Signed out' };
+    const data = await res.json().catch(() => ({}));
+    return res.ok ? data : { ...data, error: data.error ?? `Request failed (${res.status})` };
+  } catch {
+    return { error: 'Could not reach the server.' };
+  }
+}
+
+export function AtelierView({ initialOrders, staff }: { initialOrders: Order[]; staff: string }) {
+  const router = useRouter();
+  const [orders, setOrders] = useState(initialOrders);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
   const [tab, setTab] = useState<Tab>('All');
   const [q, setQ] = useState('');
@@ -68,7 +82,10 @@ export function AtelierView() {
   );
   const sel = orders.find((o) => o.id === selId) ?? list[0] ?? null;
   const live = orders.filter((o) => !o.cancelled);
-  const rev30 = live.filter((o) => o.placedAt >= addDays(stamp, -30)).reduce((n, o) => n + o.totalEur, 0);
+  // One figure per currency: amounts in different currencies are never added together.
+  const rev30 = new Map<Currency, number>();
+  for (const o of live.filter((x) => x.placedAt >= addDays(stamp, -30))) rev30.set(o.currency, (rev30.get(o.currency) ?? 0) + o.total);
+  const revenue = rev30.size ? [...rev30].map(([c, n]) => money(n, c)).join(' · ') : money(0);
   const allChecked = list.length > 0 && list.every((o) => checked.includes(o.id));
   const track = trackDraft && sel && trackDraft.id === sel.id ? trackDraft.value : sel?.tracking ?? '';
 
@@ -76,7 +93,7 @@ export function AtelierView() {
     { n: String(live.filter((o) => o.stage === 'new').length), l: 'Awaiting cutting' },
     { n: String(live.filter((o) => o.stage === 'cutting' || o.stage === 'stitching').length), l: 'On the bench' },
     { n: String(live.filter((o) => o.stage === 'shipped').length), l: 'In transit' },
-    { n: money(rev30), l: 'Revenue, last 30 days' },
+    { n: revenue, l: 'Revenue, last 30 days' },
   ];
 
   const toggleCheck = (id: string) => setChecked(checked.includes(id) ? checked.filter((c) => c !== id) : [...checked, id]);
@@ -87,15 +104,46 @@ export function AtelierView() {
     setNoteDraft('');
   };
 
-  if (!hydrated) {
-    return <section className="wrap page" style={{ minHeight: '60vh' }} />;
-  }
+  const merge = (updated: Order[]) => {
+    const byId = new Map(updated.map((o) => [o.id, o]));
+    setOrders((prev) => prev.map((o) => byId.get(o.id) ?? o));
+  };
+
+  /** Runs one API call, merges the returned order(s) and reports failure. Returns true on success. */
+  const run = async (url: string, method: string, body?: unknown): Promise<boolean> => {
+    setBusy(true);
+    setErr(null);
+    const res = await call(url, method, body);
+    setBusy(false);
+    if (res.signedOut) {
+      router.push('/sign-in?next=/atelier');
+      return false;
+    }
+    merge(res.orders ?? (res.order ? [res.order] : []));
+    if (res.error || res.warning) setErr(res.error ?? res.warning ?? null);
+    return !res.error;
+  };
+
+  const uploadPhoto = async (orderId: string, file: File) => {
+    let blob: Blob;
+    try {
+      blob = await downscaleImage(file);
+    } catch {
+      setErr('Could not read that photo. Try a JPEG or PNG.');
+      return;
+    }
+    const form = new FormData();
+    form.append('photo', blob, 'bench.jpg');
+    await run(`${orderUrl(orderId)}/photos`, 'POST', form);
+  };
+
+  const orderUrl = (id: string) => `/api/atelier/orders/${encodeURIComponent(id)}`;
 
   return (
     <section className="wrap" style={{ paddingTop: 48, paddingBottom: 110 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 24, flexWrap: 'wrap', marginBottom: 34 }}>
         <div>
-          <div className="kicker kicker-sm">Atelier — back office</div>
+          <div className="kicker kicker-sm">Atelier — back office · <span style={{ textTransform: 'none' }}>{staff}</span></div>
           <h1 className="h1-page" style={{ fontSize: 50, margin: 0 }}>Order management</h1>
         </div>
         <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -103,9 +151,13 @@ export function AtelierView() {
             <span className="sr-only">Search orders</span>
             <input className="input" placeholder="Search order, client, city" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: 260, maxWidth: '100%' }} />
           </label>
-          <button className="btn btn-secondary" style={{ padding: '10px 18px', fontSize: 11, letterSpacing: '0.18em' }} onClick={() => download(`marzae-orders-${tab.toLowerCase()}.csv`, ordersCsv(list))}>
+          <a className="btn btn-secondary" style={{ padding: '10px 18px', fontSize: 11, letterSpacing: '0.18em' }} href={csvUrl(tab, q)} download>
             Export CSV
-          </button>
+          </a>
+          <Link className="btn btn-secondary" style={{ padding: '10px 18px', fontSize: 11, letterSpacing: '0.18em' }} href="/atelier/prices">
+            Prices
+          </Link>
+          <SignOutButton />
         </div>
       </div>
 
@@ -141,14 +193,21 @@ export function AtelierView() {
           <span style={{ fontSize: 13 }}>{checked.length} selected</span>
           <button
             className="btn btn-primary btn-sm"
-            onClick={() => {
-              updateOrders(checked, (o) => advance(o, stamp));
-              setChecked([]);
+            disabled={busy}
+            onClick={async () => {
+              if (await run('/api/atelier/orders/bulk-advance', 'POST', { ids: checked })) setChecked([]);
             }}
           >
             Advance to next stage
           </button>
           <button className="btn btn-ghost" style={{ fontSize: 10.5, letterSpacing: '0.16em' }} onClick={() => setChecked([])}>Clear</button>
+        </div>
+      )}
+
+      {err && (
+        <div className="err" role="alert" style={{ margin: '0 0 18px' }}>
+          {err}{' '}
+          <button className="linkish" onClick={() => setErr(null)}>Dismiss</button>
         </div>
       )}
 
@@ -197,7 +256,7 @@ export function AtelierView() {
                     <div>{o.lines.map(piecesLabel).join(', ')}</div>
                     {o.lines.some((l) => l.initials) && <div className="flag">Initials</div>}
                   </td>
-                  <td className="tnum" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{money(o.totalEur)}</td>
+                  <td className="tnum" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{money(o.total, o.currency)}</td>
                   <td><span className={tagClass(o)}>{statusLabel(o)}</span></td>
                 </tr>
               ))}
@@ -216,7 +275,12 @@ export function AtelierView() {
                 <span className={tagClass(sel)}>{statusLabel(sel)}</span>
               </div>
               <div className="faint" style={{ fontSize: 12, letterSpacing: '0.08em', margin: '4px 0 22px' }}>
-                Placed {fmtDate(sel.placedAt)} · {sel.lines.reduce((n, l) => n + l.qty, 0)} piece(s) · {money(sel.totalEur)} · {sel.payment}
+                Placed {fmtDate(sel.placedAt)} · {sel.lines.reduce((n, l) => n + l.qty, 0)} piece(s) · {money(sel.total, sel.currency)} · {sel.payment}
+                {sel.refundedAt
+                  ? ` · Refunded ${fmtDate(sel.refundedAt)}`
+                  : sel.refundedAmount > 0
+                    ? ` · ${money(sel.refundedAmount, sel.currency)} refunded so far`
+                    : ''}
               </div>
 
               <div className="stage-steps">
@@ -234,17 +298,26 @@ export function AtelierView() {
 
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 26 }}>
                 {!sel.cancelled && sel.stage !== 'delivered' && (
-                  <button className="btn btn-primary btn-sm" style={{ padding: '10px 16px' }} onClick={() => updateOrder(sel.id, (o) => advance(o, stamp))}>
+                  <button className="btn btn-primary btn-sm" style={{ padding: '10px 16px' }} disabled={busy} onClick={() => {
+                    const next = STAGES[stageIndex(sel.stage) + 1];
+                    if (next === 'stitching' && sel.photos.length === 0 && !window.confirm('No bench photo yet, and the client was promised one before stitching. Mark as stitching anyway?')) return;
+                    void run(orderUrl(sel.id), 'PATCH', { action: 'advance' });
+                  }}>
                     Mark as {STAGE_LABELS[STAGES[stageIndex(sel.stage) + 1]].toLowerCase()}
                   </button>
                 )}
                 {!sel.cancelled && stageIndex(sel.stage) < stageIndex('shipped') && (
-                  <button className="btn btn-ghost" style={{ fontSize: 10.5, letterSpacing: '0.16em' }} onClick={() => updateOrder(sel.id, (o) => cancel(o, stamp))}>
-                    Cancel order
+                  <button className="btn btn-ghost" style={{ fontSize: 10.5, letterSpacing: '0.16em' }} disabled={busy} onClick={() => {
+                    const ask = sel.refundable
+                      ? `Cancel ${sel.id} and refund ${money(sel.total - sel.refundedAmount, sel.currency)} to the client's card? The refund cannot be undone.`
+                      : `Cancel ${sel.id}?`;
+                    if (window.confirm(ask)) void run(orderUrl(sel.id), 'PATCH', { action: 'cancel' });
+                  }}>
+                    {sel.refundable ? 'Cancel and refund' : 'Cancel order'}
                   </button>
                 )}
-                {sel.cancelled && (
-                  <button className="btn btn-secondary btn-sm" style={{ padding: '10px 16px' }} onClick={() => updateOrder(sel.id, (o) => restore(o, stamp))}>
+                {sel.cancelled && !sel.refundedAt && (
+                  <button className="btn btn-secondary btn-sm" style={{ padding: '10px 16px' }} disabled={busy} onClick={() => run(orderUrl(sel.id), 'PATCH', { action: 'restore' })}>
                     Restore order
                   </button>
                 )}
@@ -266,9 +339,49 @@ export function AtelierView() {
                       {strap(l.strap).name} · Initials: <strong style={{ fontWeight: 600, letterSpacing: '0.12em' }}>{l.initials || '—'}</strong>
                     </div>
                   </div>
-                  <div className="tnum" style={{ fontSize: 14 }}>{money(l.unitPriceEur * l.qty)}</div>
+                  <div className="tnum" style={{ fontSize: 14 }}>{money(l.unitPrice * l.qty, sel.currency)}</div>
                 </div>
               ))}
+
+              <div className="micro" style={{ margin: '22px 0 10px' }}>Bench photos</div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                {sel.photos.map((ph) => (
+                  <div key={ph.id} style={{ position: 'relative' }}>
+                    <a href={`/api/orders/${encodeURIComponent(sel.id)}/photos/${ph.id}`} target="_blank" rel="noreferrer">
+                      {/* eslint-disable-next-line @next/next/no-img-element -- private, auth-gated image */}
+                      <img src={`/api/orders/${encodeURIComponent(sel.id)}/photos/${ph.id}`} alt={`Bench photo, ${fmtDate(ph.at)}`} width={84} height={84} style={{ objectFit: 'cover', borderRadius: 4, border: '1px solid var(--color-divider)', display: 'block' }} />
+                    </a>
+                    <button
+                      className="linkish"
+                      aria-label="Delete photo"
+                      style={{ position: 'absolute', top: 2, right: 6, fontSize: 14 }}
+                      disabled={busy}
+                      onClick={() => window.confirm('Delete this photo? The client can no longer see it.') && void run(`${orderUrl(sel.id)}/photos/${ph.id}`, 'DELETE')}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+                {sel.photos.length < 6 && (
+                  <label className="btn btn-secondary btn-sm file-label" style={{ cursor: 'pointer' }}>
+                    {busy ? 'Uploading…' : 'Add photo'}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      disabled={busy}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        e.target.value = '';
+                        if (f) void uploadPhoto(sel.id, f);
+                      }}
+                    />
+                  </label>
+                )}
+              </div>
+              {sel.photos.length === 0 && (
+                <div className="faint" style={{ fontSize: 12.5, marginTop: 6 }}>The client sees these on their order page once uploaded.</div>
+              )}
 
               <div className="two-col" style={{ margin: '22px 0', paddingTop: 18, borderTop: '1px solid var(--color-divider)' }}>
                 <div style={{ fontSize: 13, lineHeight: 1.7 }}>
@@ -286,10 +399,9 @@ export function AtelierView() {
               <form
                 className="field"
                 style={{ marginBottom: 22 }}
-                onSubmit={(e) => {
+                onSubmit={async (e) => {
                   e.preventDefault();
-                  updateOrder(sel.id, (o) => ({ ...o, tracking: track.trim() }));
-                  setTrackDraft(null);
+                  if (await run(orderUrl(sel.id), 'PATCH', { tracking: track.trim() })) setTrackDraft(null);
                 }}
               >
                 <label htmlFor="tracking">Tracking number — {sel.tracking || 'Not yet assigned'}</label>
@@ -302,30 +414,31 @@ export function AtelierView() {
                     onChange={(e) => setTrackDraft({ id: sel.id, value: e.target.value })}
                     style={{ flex: 1, minWidth: 0 }}
                   />
-                  <button type="submit" className="btn btn-secondary btn-sm">Save</button>
+                  <button type="submit" className="btn btn-secondary btn-sm" disabled={busy}>Save</button>
                 </div>
               </form>
 
               <div className="micro" style={{ marginBottom: 10 }}>Internal notes</div>
               <form
                 style={{ display: 'flex', gap: 8, marginBottom: 12 }}
-                onSubmit={(e) => {
+                onSubmit={async (e) => {
                   e.preventDefault();
                   const body = noteDraft.trim();
                   if (!body) return;
-                  updateOrder(sel.id, (o) => ({ ...o, notes: [...o.notes, { body, at: stamp }] }));
-                  setNoteDraft('');
+                  if (await run(`${orderUrl(sel.id)}/notes`, 'POST', { body })) setNoteDraft('');
                 }}
               >
                 <label className="sr-only" htmlFor="note">Note</label>
                 <input id="note" className="input" placeholder="Add a note for the bench" value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)} style={{ flex: 1, minWidth: 0 }} />
-                <button type="submit" className="btn btn-secondary btn-sm">Add</button>
+                <button type="submit" className="btn btn-secondary btn-sm" disabled={busy}>Add</button>
               </form>
               {sel.notes.length === 0 && <div className="faint" style={{ fontSize: 12.5 }}>No notes on this order.</div>}
               {[...sel.notes].reverse().map((n, i) => (
                 <div key={i} className="note">
                   <div style={{ fontSize: 13 }}>{n.body}</div>
-                  <div className="micro" style={{ color: 'var(--color-neutral-500)', marginTop: 2, letterSpacing: '0.14em' }}>{fmtDate(n.at)}</div>
+                  <div className="micro" style={{ color: 'var(--color-neutral-500)', marginTop: 2, letterSpacing: '0.14em' }}>
+                    {fmtDate(n.at)}{n.author ? ` · ${n.author}` : ''}
+                  </div>
                 </div>
               ))}
             </div>

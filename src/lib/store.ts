@@ -8,9 +8,8 @@ import {
   DEFAULT_CONFIG,
   type LeatherId,
   getProduct,
-  unitPrice,
 } from './catalog';
-import { type LineItem, type Order, SEED_ORDERS, orderTotal, today } from './orders';
+import type { CartLine } from './orders';
 
 export interface CheckoutForm {
   name: string;
@@ -36,10 +35,9 @@ interface ShopState {
   query: string;
   // Persisted customer state
   wishlist: string[];
-  cart: LineItem[];
+  // Lines carry no price: it is read from the price list when shown and at checkout.
+  cart: CartLine[];
   form: CheckoutForm;
-  // Stands in for a database until the backend exists
-  orders: Order[];
 
   selectProduct: (id: string) => void;
   setConfig: (patch: Partial<Configuration>) => void;
@@ -50,9 +48,7 @@ interface ShopState {
   setQty: (index: number, qty: number) => void;
   removeLine: (index: number) => void;
   setForm: (patch: Partial<CheckoutForm>) => void;
-  placeOrder: () => string | null;
-  updateOrder: (id: string, fn: (o: Order) => Order) => void;
-  updateOrders: (ids: string[], fn: (o: Order) => Order) => void;
+  clearCart: () => void;
 }
 
 export const useShop = create<ShopState>()(
@@ -67,8 +63,7 @@ export const useShop = create<ShopState>()(
       query: '',
       wishlist: ['slip-crossbody'],
       cart: [],
-      form: { name: 'Iris Vandenberg', email: 'iris@studio.nl', addr: 'Keileweg 18', city: 'Rotterdam', zip: '3029 BS', country: 'Netherlands' },
-      orders: SEED_ORDERS,
+      form: { name: '', email: '', addr: '', city: '', zip: '', country: '' },
 
       selectProduct: (id) => set({ productId: id }),
       setConfig: (patch) => set((s) => ({ config: { ...s.config, ...patch } })),
@@ -77,10 +72,9 @@ export const useShop = create<ShopState>()(
       toggleWish: (id) =>
         set((s) => ({ wishlist: s.wishlist.includes(id) ? s.wishlist.filter((w) => w !== id) : [...s.wishlist, id] })),
       addToCart: (productId, cfg) => {
-        const product = getProduct(productId);
-        if (!product) return;
+        if (!getProduct(productId)) return;
         const c = cfg ?? get().config;
-        const line: LineItem = { productId, ...c, initials: c.initials.trim().toUpperCase(), qty: 1, unitPriceEur: unitPrice(product, c) };
+        const line: CartLine = { productId, ...c, initials: c.initials.trim().toUpperCase(), qty: 1 };
         set((s) => ({ cart: [...s.cart, line] }));
       },
       setQty: (index, qty) =>
@@ -89,34 +83,23 @@ export const useShop = create<ShopState>()(
         })),
       removeLine: (index) => set((s) => ({ cart: s.cart.filter((_, i) => i !== index) })),
       setForm: (patch) => set((s) => ({ form: { ...s.form, ...patch } })),
-      placeOrder: () => {
-        const { cart, form, orders } = get();
-        if (cart.length === 0) return null;
-        const at = today();
-        const id = 'MZ-' + (4530 + orders.length);
-        const order: Order = {
-          id,
-          placedAt: at,
-          customer: { name: form.name.trim(), email: form.email.trim() },
-          shipTo: { addr: form.addr.trim(), city: form.city.trim(), zip: form.zip.trim(), country: form.country.trim() },
-          lines: cart,
-          totalEur: orderTotal(cart),
-          payment: 'Paid — card',
-          stage: 'new',
-          cancelled: false,
-          tracking: '',
-          history: [{ stage: 'new', at }],
-          notes: [],
-        };
-        set({ orders: [order, ...orders], cart: [] });
-        return id;
-      },
-      updateOrder: (id, fn) => set((s) => ({ orders: s.orders.map((o) => (o.id === id ? fn(o) : o)) })),
-      updateOrders: (ids, fn) => set((s) => ({ orders: s.orders.map((o) => (ids.includes(o.id) ? fn(o) : o)) })),
+      clearCart: () => set({ cart: [] }),
     }),
     {
       name: 'marzae',
-      version: 1,
+      // v2: orders moved to the server. v3: cart lines no longer store a price.
+      version: 3,
+      migrate: (state) => {
+        const { orders: _orders, ...rest } = (state ?? {}) as Record<string, unknown>;
+        void _orders;
+        const cart = Array.isArray(rest.cart) ? rest.cart : [];
+        rest.cart = cart.map((l: Record<string, unknown>) => {
+          const { unitPriceEur: _price, ...line } = l;
+          void _price;
+          return line;
+        });
+        return rest as unknown as ShopState;
+      },
       storage: createJSONStorage(() => localStorage),
       skipHydration: true,
       partialize: (s) => ({
@@ -125,7 +108,6 @@ export const useShop = create<ShopState>()(
         wishlist: s.wishlist,
         cart: s.cart,
         form: s.form,
-        orders: s.orders,
       }),
     },
   ),

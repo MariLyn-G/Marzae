@@ -1,14 +1,5 @@
-import {
-  type Configuration,
-  type HardwareId,
-  type LeatherId,
-  type StrapId,
-  getProduct,
-  hardware,
-  leather,
-  strap,
-  unitPrice,
-} from './catalog';
+import { type Configuration, getProduct, hardware, leather, strap } from './catalog';
+import type { Currency } from './money';
 
 export type Stage = 'new' | 'cutting' | 'stitching' | 'shipped' | 'delivered';
 export const STAGES: Stage[] = ['new', 'cutting', 'stitching', 'shipped', 'delivered'];
@@ -20,25 +11,38 @@ export const STAGE_LABELS: Record<Stage, string> = {
   delivered: 'Delivered',
 };
 
-export interface LineItem extends Configuration {
+/** A bag line before pricing: what the cart holds. */
+export interface CartLine extends Configuration {
   productId: string;
   qty: number;
-  unitPriceEur: number;
+}
+
+/** A priced line on an order. The price is fixed when the order is placed. */
+export interface LineItem extends CartLine {
+  unitPrice: number;
 }
 
 export interface Order {
   id: string;
-  placedAt: string; // YYYY-MM-DD
+  placedAt: string; // YYYY-MM-DD, UTC
   customer: { name: string; email: string };
   shipTo: { addr: string; city: string; zip: string; country: string };
   lines: LineItem[];
-  totalEur: number;
+  currency: Currency;
+  total: number;
   payment: string;
+  /** True when the order was paid by card through Stripe and has not been refunded. */
+  refundable: boolean;
+  /** Set when the payment is refunded in full. */
+  refundedAt: string | null;
+  /** Refunded so far, full or partial, in `currency`. */
+  refundedAmount: number;
   stage: Stage;
   cancelled: boolean;
   tracking: string;
   history: { stage: Stage | 'cancelled'; at: string }[];
-  notes: { body: string; at: string }[];
+  notes: { body: string; at: string; author?: string }[];
+  photos: { id: number; at: string }[];
 }
 
 export function today(): string {
@@ -62,7 +66,7 @@ export function stageIndex(s: Stage): number {
 }
 
 export function orderTotal(lines: LineItem[]): number {
-  return lines.reduce((n, l) => n + l.unitPriceEur * l.qty, 0);
+  return lines.reduce((n, l) => n + l.unitPrice * l.qty, 0);
 }
 
 export function statusLabel(o: Order): string {
@@ -93,8 +97,9 @@ export function cancel(o: Order, at: string): Order {
   };
 }
 
+/** Refunded orders stay cancelled: the payment is gone, so the client orders again. */
 export function restore(o: Order, at: string): Order {
-  if (!o.cancelled) return o;
+  if (!o.cancelled || o.refundedAt) return o;
   return { ...o, cancelled: false, notes: [...o.notes, { body: 'Order restored.', at }] };
 }
 
@@ -102,8 +107,14 @@ export function piecesLabel(l: LineItem): string {
   return getProduct(l.productId)?.name ?? l.productId;
 }
 
+/** Quotes a cell and defuses leading = + - @ so spreadsheet apps do not run customer text as a formula. */
+function csvCell(v: string): string {
+  const safe = /^[=+\-@\t\r]/.test(v) ? "'" + v : v;
+  return '"' + safe.replace(/"/g, '""') + '"';
+}
+
 export function ordersCsv(orders: Order[]): string {
-  const header = ['Order', 'Placed', 'Client', 'Email', 'City', 'Country', 'Pieces', 'Total EUR', 'Status', 'Tracking'];
+  const header = ['Order', 'Placed', 'Client', 'Email', 'City', 'Country', 'Pieces', 'Total', 'Currency', 'Status', 'Tracking'];
   const rows = orders.map((o) => [
     o.id,
     o.placedAt,
@@ -112,86 +123,14 @@ export function ordersCsv(orders: Order[]): string {
     o.shipTo.city,
     o.shipTo.country,
     o.lines.map((l) => `${piecesLabel(l)} (${leather(l.leather).name}${l.initials ? ', ' + l.initials : ''})`).join(' | '),
-    String(o.totalEur),
+    String(o.total),
+    o.currency,
     statusLabel(o),
     o.tracking,
   ]);
-  return [header, ...rows].map((r) => r.map((v) => '"' + v.replace(/"/g, '""') + '"').join(',')).join('\n');
+  return [header, ...rows].map((r) => r.map(csvCell).join(',')).join('\n');
 }
 
 export function lineDescription(l: LineItem): string {
   return `${leather(l.leather).name} · ${hardware(l.hardware).name} · ${strap(l.strap).name}`;
 }
-
-// ── Seed data ────────────────────────────────────────────────────────────
-
-const STAGE_DAYS = [0, 3, 14, 40, 47];
-
-interface SeedLine {
-  productId: string;
-  leather?: LeatherId;
-  hardware?: HardwareId;
-  strap?: StrapId;
-  initials?: string;
-}
-
-interface Seed {
-  id: string;
-  date: string;
-  name: string;
-  email: string;
-  addr: string;
-  city: string;
-  zip: string;
-  country: string;
-  lines: SeedLine[];
-  stage: number;
-  cancelled?: boolean;
-  tracking?: string;
-  notes?: { body: string; at: string }[];
-}
-
-function hydrate(s: Seed): Order {
-  const lines: LineItem[] = s.lines.map((l) => {
-    const cfg: Configuration = {
-      leather: l.leather ?? 'black-oxide',
-      hardware: l.hardware ?? 'antique-brass',
-      strap: l.strap ?? 'as-made',
-      initials: l.initials ?? '',
-    };
-    return { productId: l.productId, qty: 1, ...cfg, unitPriceEur: unitPrice(getProduct(l.productId)!, cfg) };
-  });
-  const history: Order['history'] = [];
-  for (let i = 0; i <= s.stage; i++) history.push({ stage: STAGES[i], at: addDays(s.date, STAGE_DAYS[i]) });
-  if (s.cancelled) history.push({ stage: 'cancelled', at: addDays(s.date, 1) });
-  return {
-    id: s.id,
-    placedAt: s.date,
-    customer: { name: s.name, email: s.email },
-    shipTo: { addr: s.addr, city: s.city, zip: s.zip, country: s.country },
-    lines,
-    totalEur: orderTotal(lines),
-    payment: 'Paid — card',
-    stage: STAGES[s.stage],
-    cancelled: !!s.cancelled,
-    tracking: s.tracking ?? '',
-    history,
-    notes: s.notes ?? [],
-  };
-}
-
-const SEEDS: Seed[] = [
-  { id: 'MZ-4521', date: '2026-10-03', name: 'Hélène Marchand', email: 'helene@marchand.fr', addr: '14 rue de Grenelle', city: 'Paris', zip: '75007', country: 'France', lines: [{ productId: 'aperture-tote', leather: 'chestnut', initials: 'HM' }], stage: 0, notes: [{ body: 'Client asked for the initials centred under the mouth, not lower right.', at: '2026-10-03' }] },
-  { id: 'MZ-4518', date: '2026-10-02', name: 'Kenji Arai', email: 'k.arai@arai-office.jp', addr: '3-7-1 Minami-Aoyama', city: 'Tokyo', zip: '107-0062', country: 'Japan', lines: [{ productId: 'ledger-work-bag', hardware: 'blackened' }], stage: 0 },
-  { id: 'MZ-4512', date: '2026-09-30', name: 'Sofia Brandt', email: 'sofia@brandt.studio', addr: 'Linienstraße 40', city: 'Berlin', zip: '10119', country: 'Germany', lines: [{ productId: 'signal-clutch', strap: 'chain', initials: 'SB' }, { productId: 'slip-crossbody', leather: 'bone', hardware: 'brushed-steel' }], stage: 1 },
-  { id: 'MZ-4506', date: '2026-09-27', name: 'Amara Okafor', email: 'amara.okafor@me.com', addr: '22 Cheyne Walk', city: 'London', zip: 'SW3 5HH', country: 'United Kingdom', lines: [{ productId: 'meridian-backpack', leather: 'espresso', initials: 'AO' }], stage: 1 },
-  { id: 'MZ-4497', date: '2026-09-22', name: 'Luca Ferri', email: 'luca@ferri-arch.it', addr: 'Via Solferino 11', city: 'Milan', zip: '20121', country: 'Italy', lines: [{ productId: 'aperture-mini', leather: 'ash', hardware: 'brushed-steel' }], stage: 2 },
-  { id: 'MZ-4489', date: '2026-09-18', name: 'Nora Lindqvist', email: 'nora@lindqvist.se', addr: 'Strandvägen 7', city: 'Stockholm', zip: '114 56', country: 'Sweden', lines: [{ productId: 'meridian-daypack', leather: 'bone', strap: 'sling' }], stage: 2 },
-  { id: 'MZ-4471', date: '2026-08-24', name: 'Daniel Cho', email: 'dcho@chopartners.com', addr: '88 Greene Street', city: 'New York', zip: '10012', country: 'United States', lines: [{ productId: 'aperture-tote', hardware: 'blackened' }, { productId: 'ledger-folio', hardware: 'blackened', initials: 'DC' }], stage: 3, tracking: '1Z84F2906618402271' },
-  { id: 'MZ-4455', date: '2026-09-04', name: 'Ravi Mehta', email: 'ravi@mehta.co', addr: '5 Altamount Road', city: 'Mumbai', zip: '400026', country: 'India', lines: [{ productId: 'signal-clutch', leather: 'chestnut' }], stage: 0, cancelled: true, notes: [{ body: 'Cancelled at client request before cutting. Refund issued in full.', at: '2026-09-05' }] },
-  { id: 'MZ-4417', date: '2026-08-19', name: 'Iris Vandenberg', email: 'iris@studio.nl', addr: 'Keileweg 18', city: 'Rotterdam', zip: '3029 BS', country: 'Netherlands', lines: [{ productId: 'ledger-work-bag', leather: 'espresso' }], stage: 3, tracking: 'JVGL0612443980021' },
-  { id: 'MZ-4380', date: '2026-07-21', name: 'Camille Roux', email: 'camille.roux@free.fr', addr: '9 quai Saint-Vincent', city: 'Lyon', zip: '69001', country: 'France', lines: [{ productId: 'slip-crossbody', leather: 'ash', hardware: 'brushed-steel' }], stage: 4, tracking: 'CP558210934FR' },
-  { id: 'MZ-4102', date: '2026-06-30', name: 'Iris Vandenberg', email: 'iris@studio.nl', addr: 'Keileweg 18', city: 'Rotterdam', zip: '3029 BS', country: 'Netherlands', lines: [{ productId: 'slip-crossbody', leather: 'chestnut', hardware: 'blackened' }], stage: 4, tracking: 'JVGL0611029384417' },
-];
-
-export const SEED_ORDERS: Order[] = SEEDS.map(hydrate);

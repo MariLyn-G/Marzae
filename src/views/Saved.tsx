@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { BagImage } from '@/components/BagImage';
 import { useAddDefault } from '@/components/ProductCard';
 import { getProduct } from '@/lib/catalog';
-import { money } from '@/lib/money';
+import { priceText, usePrices } from '@/components/Prices';
+import { basePrice } from '@/lib/pricing';
 import { useHydrated, useShop } from '@/lib/store';
 
 export function SavedView() {
@@ -12,6 +13,7 @@ export function SavedView() {
   const wishlist = useShop((s) => s.wishlist);
   const toggle = useShop((s) => s.toggleWish);
   const add = useAddDefault();
+  const pl = usePrices();
   const items = hydrated ? wishlist.map((id) => getProduct(id)).filter((p) => !!p) : [];
 
   return (
@@ -33,10 +35,10 @@ export function SavedView() {
                 <BagImage productId={p.id} />
               </div>
               <span className="name">{p.name}</span>
-              <span className="sub tnum">{money(p.priceEur)}</span>
+              <span className="sub tnum">{priceText(basePrice(pl, p.id))}</span>
             </Link>
             <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-              <button className="btn btn-secondary btn-sm" onClick={() => add(p.id)}>Add to bag</button>
+              <button className="btn btn-secondary btn-sm" disabled={basePrice(pl, p.id) === null} onClick={() => add(p.id)}>Add to bag</button>
               <button className="btn btn-ghost" style={{ fontSize: 11 }} onClick={() => toggle(p.id)}>Remove</button>
             </div>
           </article>

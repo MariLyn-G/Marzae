@@ -2,14 +2,18 @@
 
 import { ProductCard } from '@/components/ProductCard';
 import { HideSwatches } from '@/components/Options';
-import { CATEGORIES, PRODUCTS, type Product } from '@/lib/catalog';
+import { usePrices } from '@/components/Prices';
+import { CATEGORIES, PRODUCTS } from '@/lib/catalog';
+import { money } from '@/lib/money';
+import { basePrice } from '@/lib/pricing';
 import { type PriceBand, type SortKey, useShop } from '@/lib/store';
 
-const BANDS: { id: PriceBand; label: string; test: (p: Product) => boolean }[] = [
+// Band edges are in the store currency.
+const BANDS: { id: PriceBand; label: string; test: (price: number) => boolean }[] = [
   { id: 'all', label: 'Any price', test: () => true },
-  { id: 'under-400', label: 'Under €400', test: (p) => p.priceEur < 400 },
-  { id: '400-700', label: '€400 – €700', test: (p) => p.priceEur >= 400 && p.priceEur <= 700 },
-  { id: 'over-700', label: 'Over €700', test: (p) => p.priceEur > 700 },
+  { id: 'under-400', label: `Under ${money(400)}`, test: (n) => n < 400 },
+  { id: '400-700', label: `${money(400)} – ${money(700)}`, test: (n) => n >= 400 && n <= 700 },
+  { id: 'over-700', label: `Over ${money(700)}`, test: (n) => n > 700 },
 ];
 
 const GRID = (process.env.NEXT_PUBLIC_SHOP_GRID ?? '3') as '2' | '3' | '4';
@@ -17,15 +21,18 @@ const GRID = (process.env.NEXT_PUBLIC_SHOP_GRID ?? '3') as '2' | '3' | '4';
 export function ShopView() {
   const { category, priceBand, hide, sort, query, setFilters, clearFilters } = useShop();
   const band = BANDS.find((b) => b.id === priceBand) ?? BANDS[0];
+  const pl = usePrices();
+  // Items without a price sort last and only show under "Any price".
+  const price = (id: string) => basePrice(pl, id) ?? Infinity;
   const q = query.trim().toLowerCase();
 
   // Every bag is made in every hide, so the hide picker does not narrow the list. It re-renders
   // the cards in that hide and pre-selects it in the configurator.
   let shown = PRODUCTS.filter(
-    (p) => (category === 'All' || p.category === category) && band.test(p) && (!q || `${p.name} ${p.category}`.toLowerCase().includes(q)),
+    (p) => (category === 'All' || p.category === category) && (band.id === 'all' || band.test(price(p.id))) && (!q || `${p.name} ${p.category}`.toLowerCase().includes(q)),
   );
-  if (sort === 'low') shown = [...shown].sort((a, b) => a.priceEur - b.priceEur);
-  if (sort === 'high') shown = [...shown].sort((a, b) => b.priceEur - a.priceEur);
+  if (sort === 'low') shown = [...shown].sort((a, b) => price(a.id) - price(b.id));
+  if (sort === 'high') shown = [...shown].sort((a, b) => (basePrice(pl, b.id) ?? -1) - (basePrice(pl, a.id) ?? -1));
   if (sort === 'pop') shown = [...shown].sort((a, b) => b.reviewCount - a.reviewCount);
 
   const title = category === 'All' ? 'The collection' : category;

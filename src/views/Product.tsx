@@ -16,10 +16,10 @@ import {
   specFor,
   stars,
   strap,
-  unitPrice,
 } from '@/lib/catalog';
 import type { ViewName } from '@/lib/bag3d';
-import { money } from '@/lib/money';
+import { priceText, usePrices } from '@/components/Prices';
+import { initialsPrice, unitPrice } from '@/lib/pricing';
 import { useShop } from '@/lib/store';
 
 const VIEWS: { id: ViewName; label: string }[] = [
@@ -46,7 +46,9 @@ export function ProductView({ id }: { id: string }) {
     selectProduct(product.id);
   }, [product.id, selectProduct]);
 
-  const price = unitPrice(product, config);
+  const pl = usePrices();
+  const price = unitPrice(pl, product.id, config);
+  const initialsCost = initialsPrice(pl);
   const initials = config.initials.trim();
   const related = PRODUCTS.filter((p) => p.id !== product.id).slice(0, 4);
 
@@ -116,7 +118,7 @@ export function ProductView({ id }: { id: string }) {
           <div className="kicker tnum">No. {product.numeral} — {product.category}</div>
           <h1 style={{ fontSize: 46, fontWeight: 400, marginBottom: 10 }}>{product.name}</h1>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, marginBottom: 18 }}>
-            <span className="serif tnum" style={{ fontSize: 28 }}>{money(price)}</span>
+            <span className="serif tnum" style={{ fontSize: 28 }}>{priceText(price)}</span>
             <span className="muted" style={{ fontSize: 13 }}>{stars(product.rating)} · {product.reviewCount} reviews</span>
           </div>
           <p className="justify" style={{ maxWidth: '48ch' }}>{product.blurb}</p>
@@ -134,10 +136,13 @@ export function ProductView({ id }: { id: string }) {
           <StrapChips value={config.strap} onChange={(s) => setConfig({ strap: s })} />
 
           <div className="field" style={{ maxWidth: 260, marginBottom: 26 }}>
-            <label htmlFor="initials">Blind-debossed initials (+€25)</label>
+            <label htmlFor="initials">
+              Blind-debossed initials {initialsCost === null ? '(not available)' : `(+${priceText(initialsCost)})`}
+            </label>
             <input
               id="initials"
               className="input"
+              disabled={initialsCost === null}
               maxLength={3}
               placeholder="M.Z."
               value={config.initials}
@@ -149,12 +154,13 @@ export function ProductView({ id }: { id: string }) {
             <button
               className="btn btn-primary"
               style={{ padding: '14px 24px' }}
+              disabled={price === null}
               onClick={() => {
                 addToCart(product.id);
                 router.push('/bag');
               }}
             >
-              Add to bag — {money(price)}
+              {price === null ? 'Not available in this specification' : `Add to bag — ${priceText(price)}`}
             </button>
             <Link className="btn btn-secondary" style={{ padding: '14px 24px' }} href="/fitting-room">Try it on</Link>
           </div>

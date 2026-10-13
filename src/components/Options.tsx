@@ -1,5 +1,8 @@
 'use client';
 
+import { money } from '@/lib/money';
+import { strapPrice } from '@/lib/pricing';
+import { usePrices } from './Prices';
 import { HARDWARE, LEATHERS, STRAPS, type HardwareId, type LeatherId, type StrapId } from '@/lib/catalog';
 
 export function HideSwatches({ value, onChange, size }: { value: LeatherId | null; onChange: (id: LeatherId) => void; size?: 'sm' | 'md' }) {
@@ -35,14 +38,26 @@ export function HardwareChips({ value, onChange }: { value: HardwareId; onChange
 }
 
 export function StrapChips({ value, onChange }: { value: StrapId; onChange: (id: StrapId) => void }) {
+  const pl = usePrices();
   return (
     <div className="chips" role="radiogroup" aria-label="Strap">
-      {STRAPS.map((s) => (
-        <button key={s.id} role="radio" aria-checked={value === s.id} className={value === s.id ? 'chip on' : 'chip'} onClick={() => onChange(s.id)}>
-          {s.name}
-          {s.surchargeEur ? ` (+€${s.surchargeEur})` : ''}
-        </button>
-      ))}
+      {STRAPS.map((s) => {
+        const extra = strapPrice(pl, s.id);
+        return (
+          <button
+            key={s.id}
+            role="radio"
+            aria-checked={value === s.id}
+            className={value === s.id ? 'chip on' : 'chip'}
+            disabled={extra === null}
+            title={extra === null ? 'Not available' : undefined}
+            onClick={() => onChange(s.id)}
+          >
+            {s.name}
+            {extra ? ` (+${money(extra)})` : ''}
+          </button>
+        );
+      })}
     </div>
   );
 }

@@ -3,10 +3,13 @@ import Link from 'next/link';
 import { CapacityArt } from '@/components/Art';
 import { PRODUCTS } from '@/lib/catalog';
 import { money } from '@/lib/money';
+import { basePrice } from '@/lib/pricing';
+import { getPriceList } from '@/server/prices';
 
 export const metadata: Metadata = { title: 'Fit guide' };
 
-export default function Page() {
+export default async function Page() {
+  const pl = await getPriceList();
   return (
     <section className="wrap page">
       <div className="kicker">Guide</div>
@@ -39,7 +42,7 @@ export default function Page() {
                 <td className="tnum">{p.volume}</td>
                 <td className="tnum">{p.laptop}</td>
                 <td className="tnum">{p.weight}</td>
-                <td className="tnum">{money(p.priceEur)}</td>
+                <td className="tnum">{basePrice(pl, p.id) === null ? '—' : money(basePrice(pl, p.id)!)}</td>
               </tr>
             ))}
           </tbody>
