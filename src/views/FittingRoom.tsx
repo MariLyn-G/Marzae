@@ -1,12 +1,13 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { FigureArt, ScaleArt } from '@/components/Art';
 import { BagViewer } from '@/components/BagViewer';
 import { HideSwatches } from '@/components/Options';
-import { priceText, usePrices } from '@/components/Prices';
-import { colorsFor, getProduct, PRODUCTS, specFor } from '@/lib/catalog';
+import { priceText, useCatalog, usePrices } from '@/components/Catalog';
+import { colorsFor, specFor } from '@/lib/catalog';
 import { basePrice, unitPrice } from '@/lib/pricing';
 import { useShop } from '@/lib/store';
 
@@ -23,7 +24,8 @@ export function FittingRoomView() {
   const setConfig = useShop((s) => s.setConfig);
   const selectProduct = useShop((s) => s.selectProduct);
   const addToCart = useShop((s) => s.addToCart);
-  const product = getProduct(productId) ?? PRODUCTS[0];
+  const catalog = useCatalog();
+  const product = catalog.product(productId) ?? catalog.products[0];
 
   const [mode, setMode] = useState<Mode>('photo');
   const [photo, setPhoto] = useState<string | null>(null);
@@ -46,11 +48,20 @@ export function FittingRoomView() {
 
   const showBag = mode === 'scale' || !!photo;
   const pl = usePrices();
+  if (!product) {
+    return (
+      <section className="wrap page">
+        <h1 className="h1-page">Fitting room</h1>
+        <p className="muted">Nothing to try on yet. The collection is being prepared.</p>
+        <Link className="btn btn-secondary" style={{ padding: '12px 20px' }} href="/">Back to the house</Link>
+      </section>
+    );
+  }
   const price = unitPrice(pl, product.id, config);
   const stageLabel = mode === 'scale' ? 'Scale preview — desk at 1:1' : photo ? 'Your photograph — drag the bag to turn it' : 'No photograph yet';
   const drop = config.strap === 'as-made' ? '24 cm handle' : config.strap === 'sling' ? '52 cm, adjustable' : '30 cm chain';
   const facts = [
-    ['Style', `No. ${product.numeral} — ${product.name}`],
+    ['Style', product.numeral ? `No. ${product.numeral} — ${product.name}` : product.name],
     ['True dimensions', product.dims],
     ['Drop on the body', drop],
     ['Worn height', `${Math.round(ty)}% up the frame`],
@@ -114,7 +125,7 @@ export function FittingRoomView() {
         <div>
           <div className="label">Bag</div>
           <div className="pick-list">
-            {PRODUCTS.slice(0, 5).map((p) => {
+            {catalog.products.map((p) => {
               const on = p.id === product.id;
               return (
                 <button key={p.id} className={on ? 'uline on on-fg' : 'uline'} aria-pressed={on} onClick={() => selectProduct(p.id)}>

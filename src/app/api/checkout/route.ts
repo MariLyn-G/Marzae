@@ -6,6 +6,7 @@ import { env } from '@/server/env';
 import { placeUnpaidOrder } from '@/server/fulfil';
 import { jsonError, readJson } from '@/server/http';
 import { loadPriceList } from '@/server/prices';
+import { loadProducts } from '@/server/products';
 import { LIMITS, limitByIp } from '@/server/rate-limit';
 import { checkoutSessionParams, stripe } from '@/server/stripe';
 
@@ -21,7 +22,8 @@ export async function POST(req: Request) {
   if ('error' in body) return body.error;
 
   // Straight from the database, not the page cache: this is what the customer pays.
-  const priced = priceLines(await loadPriceList(STORE_CURRENCY), body.data.lines);
+  const [pl, live] = await Promise.all([loadPriceList(STORE_CURRENCY), loadProducts(['live'])]);
+  const priced = priceLines(pl, live, body.data.lines);
   if (!priced.ok) {
     return jsonError(409, `Not available any more: ${priced.unavailable.join('; ')}. Change or remove it in the bag to continue.`, {
       code: 'unavailable',

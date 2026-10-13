@@ -1,8 +1,8 @@
 import Link from 'next/link';
 import { SignOutButton } from '@/components/SignIn';
-import { getProduct, leather } from '@/lib/catalog';
+import { leather } from '@/lib/catalog';
 import { money } from '@/lib/money';
-import { fmtDate, type Order, type Stage } from '@/lib/orders';
+import { fmtDate, type Order, piecesLabel, type Stage } from '@/lib/orders';
 
 // Customer-facing stages collapse cutting and stitching into "On the bench".
 const TRACK: { label: string; stages: Stage[] }[] = [
@@ -42,7 +42,7 @@ export function OrdersView({ email, orders }: { email: string; orders: Order[] }
             <div className="order-head">
               <h4 className="tnum" style={{ margin: 0, fontWeight: 400, fontSize: 24 }}>{o.id}</h4>
               <span className="muted" style={{ fontSize: 12.5 }}>
-                {o.lines.map((l) => `${getProduct(l.productId)?.name} — ${leather(l.leather).name}`).join(' · ')}
+                {o.lines.map((l) => `${piecesLabel(l)} — ${leather(l.leather).name}`).join(' · ')}
               </span>
               <span className={o.cancelled ? 'tag tag-neutral' : 'tag tag-accent'} style={{ marginLeft: 'auto' }}>{customerStatus(o)}</span>
               <span className="serif tnum" style={{ fontSize: 20 }}>{money(o.total, o.currency)}</span>

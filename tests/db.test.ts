@@ -12,7 +12,8 @@ describe.skipIf(!url)('database', async () => {
   const repo = await import('@/server/orders-repo');
   const { fulfilCheckout } = await import('@/server/fulfil');
   const { checkouts } = await import('@/server/db/schema');
-  const { LAUNCH_PRICES_EUR } = await import('@/server/launch-prices');
+  const { REFERENCE_PRICES_EUR, REFERENCE_PRODUCTS } = await import('@/server/reference-catalog');
+  const catalog = await import('@/server/products');
   const prices = await import('@/server/prices');
   const refunds = await import('@/server/refunds');
   const photos = await import('@/server/photos');
@@ -22,7 +23,7 @@ describe.skipIf(!url)('database', async () => {
   const { priceLines } = await import('@/server/checkout');
 
   const customer = { name: 'Iris Vandenberg', email: 'iris@studio.nl', addr: 'Keileweg 18', city: 'Rotterdam', zip: '3029 BS', country: 'Netherlands' };
-  const priced = priceLines(LAUNCH_PRICES_EUR, [{ productId: 'slip-crossbody', leather: 'bone', hardware: 'brushed-steel', strap: 'as-made', initials: 'IV', qty: 1 }]);
+  const priced = priceLines(REFERENCE_PRICES_EUR, REFERENCE_PRODUCTS, [{ productId: 'slip-crossbody', leather: 'bone', hardware: 'brushed-steel', strap: 'as-made', initials: 'IV', qty: 1 }]);
   if (!priced.ok) throw new Error('fixture not priced');
   const lines = priced.lines;
   const place = (stripePaymentIntent?: string) =>
@@ -41,7 +42,9 @@ describe.skipIf(!url)('database', async () => {
     await migrate(db(), { migrationsFolder: 'drizzle' });
   });
   beforeEach(async () => {
-    await db().execute(sql`truncate orders, checkouts, login_tokens, rate_limits restart identity cascade`);
+    await db().execute(sql`truncate orders, checkouts, login_tokens, rate_limits, products, prices restart identity cascade`);
+    // The reference prices, as `npm run db:seed` loads them; products are added per test.
+    await prices.savePrices(Object.entries(REFERENCE_PRICES_EUR.amounts).map(([sku, amount]) => ({ sku, currency: 'EUR' as const, amount })), 'test');
   });
   afterAll(async () => {
     await (globalThis as unknown as { marzaePool?: { end(): Promise<void> } }).marzaePool?.end();
@@ -52,7 +55,7 @@ describe.skipIf(!url)('database', async () => {
     expect(o.id).toMatch(/^MZ-\d+$/);
     expect(o.customer.email).toBe('iris@studio.nl');
     expect(o).toMatchObject({ total: 415, currency: 'EUR', refundable: false, refundedAt: null, refundedAmount: 0, photos: [] });
-    expect(o.lines[0]).toMatchObject({ productId: 'slip-crossbody', initials: 'IV', unitPrice: 415 });
+    expect(o.lines[0]).toMatchObject({ productId: 'slip-crossbody', productName: 'Slip Crossbody', initials: 'IV', unitPrice: 415 });
     expect(o.history.map((h) => h.stage)).toEqual(['new']);
   });
 
@@ -109,7 +112,7 @@ describe.skipIf(!url)('database', async () => {
   });
 
   it('reads and edits the price list, including taking an item off sale', async () => {
-    expect((await prices.loadPriceList('EUR')).amounts).toEqual(LAUNCH_PRICES_EUR.amounts);
+    expect((await prices.loadPriceList('EUR')).amounts).toEqual(REFERENCE_PRICES_EUR.amounts);
     expect((await prices.loadPriceList('USD')).amounts).toEqual({});
     await prices.savePrices(
       [
@@ -125,9 +128,6 @@ describe.skipIf(!url)('database', async () => {
     expect(eur['strap:chain']).toBeUndefined();
     const row = (await prices.listPrices()).find((r) => r.sku === 'product:signal-clutch' && r.currency === 'EUR');
     expect(row?.updatedBy).toBe('bench@marzae.com');
-    // Put the launch prices back for the other tests.
-    await db().execute(sql`delete from prices`);
-    await prices.savePrices(Object.entries(LAUNCH_PRICES_EUR.amounts).map(([sku, amount]) => ({ sku, currency: 'EUR' as const, amount })), 'test');
   });
 
   describe('refunds', () => {
@@ -227,6 +227,61 @@ describe.skipIf(!url)('database', async () => {
     expect(await photos.getPhoto('MZ-other', id)).toBeNull();
     expect(await photos.deletePhoto(o.id, id)).toBe(true);
     expect(await photos.deletePhoto(o.id, id)).toBe(false);
+  });
+
+  describe('products', () => {
+    const fields = (over: Partial<Parameters<typeof catalog.createProduct>[1]> = {}) => {
+      const { id: _id, photos: _p, rating: _r, reviewCount: _c, ...rest } = REFERENCE_PRODUCTS[0];
+      void _id, _p, _r, _c;
+      return { ...rest, name: 'Harbour Tote', status: 'draft' as const, ...over };
+    };
+    const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64)]);
+
+    it('creates, refuses a taken id, updates, and lists by status', async () => {
+      const p = await catalog.createProduct('harbour-tote', fields(), 'bench@marzae.com');
+      expect(p).toMatchObject({ id: 'harbour-tote', name: 'Harbour Tote', status: 'draft', rating: 0, reviewCount: 0, photos: [] });
+      expect(await catalog.createProduct('harbour-tote', fields(), 'x')).toBeNull();
+      expect(await catalog.loadProducts(['live'])).toEqual([]);
+
+      const live = await catalog.updateProduct('harbour-tote', fields({ status: 'live', name: 'Harbour Tote II' }), 'x');
+      expect(live).toMatchObject({ status: 'live', name: 'Harbour Tote II' });
+      expect((await catalog.loadProducts(['live'])).map((x) => x.id)).toEqual(['harbour-tote']);
+      expect(await catalog.updateProduct('nope', fields(), 'x')).toBeNull();
+    });
+
+    it('validates fields and the 3D shape', () => {
+      const ok = fields();
+      expect(catalog.productFields.safeParse(ok).success).toBe(true);
+      expect(catalog.productFields.safeParse({ ...ok, name: ' ' }).success).toBe(false);
+      expect(catalog.productFields.safeParse({ ...ok, status: 'published' }).success).toBe(false);
+      expect(catalog.productFields.safeParse({ ...ok, spec3d: { ...ok.spec3d, w: 9 } }).success).toBe(false);
+      expect(catalog.productFields.safeParse({ ...ok, spec3d: { ...ok.spec3d, w: 0.5, r: 0.25 } }).success).toBe(false);
+      for (const bad of ['A', 'Harbour Tote', 'harbour--tote', '-tote', 'tote/x']) expect(catalog.productId.safeParse(bad).success).toBe(false);
+      expect(catalog.productId.safeParse('harbour-tote-2').success).toBe(true);
+    });
+
+    it('keeps order line names when a product is renamed or archived', async () => {
+      await catalog.createProduct('slip-crossbody', fields({ name: 'Slip Crossbody', status: 'live' }), 'x');
+      const o = await place();
+      await catalog.updateProduct('slip-crossbody', fields({ name: 'Renamed', status: 'archived' }), 'x');
+      expect((await repo.getOrder(o.id))!.lines[0].productName).toBe('Slip Crossbody');
+    });
+
+    it('stores photos in order, moves one to the front, and deletes', async () => {
+      await catalog.createProduct('harbour-tote', fields(), 'x');
+      const a = await catalog.addProductPhoto('harbour-tote', jpeg, 'x');
+      const b = await catalog.addProductPhoto('harbour-tote', jpeg, 'x');
+      expect(a.ok && b.ok).toBe(true);
+      const [first, second] = (b as { product: { photos: number[] } }).product.photos;
+      expect((await catalog.makeMainPhoto('harbour-tote', second))!.photos).toEqual([second, first]);
+      expect(await catalog.addProductPhoto('harbour-tote', Buffer.from('<svg/>'), 'x')).toMatchObject({ ok: false, status: 415 });
+      expect(await catalog.addProductPhoto('nope', jpeg, 'x')).toMatchObject({ ok: false, status: 404 });
+      for (let i = 2; i < catalog.MAX_PRODUCT_PHOTOS; i++) await catalog.addProductPhoto('harbour-tote', jpeg, 'x');
+      expect(await catalog.addProductPhoto('harbour-tote', jpeg, 'x')).toMatchObject({ ok: false, status: 409 });
+      expect(await catalog.getProductPhoto('harbour-tote', first)).toMatchObject({ contentType: 'image/jpeg', status: 'draft' });
+      expect((await catalog.deleteProductPhoto('harbour-tote', first))!.photos).not.toContain(first);
+      expect(await catalog.deleteProductPhoto('harbour-tote', first)).toBeNull();
+    });
   });
 
   it('rate limits per key in a fixed window', async () => {

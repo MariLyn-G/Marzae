@@ -1,22 +1,21 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { getProduct, PRODUCTS } from '@/lib/catalog';
+import { findProduct } from '@/lib/catalog';
+import { getCatalog } from '@/server/products';
 import { ProductView } from '@/views/Product';
 
-export function generateStaticParams() {
-  return PRODUCTS.map((p) => ({ id: p.id }));
+// Only live products have a page; drafts and archived styles are 404 to customers.
+async function liveProduct(id: string) {
+  return findProduct(await getCatalog(), id);
 }
 
-export const dynamicParams = false;
-
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
-  const { id } = await params;
-  const p = getProduct(id);
+  const p = await liveProduct((await params).id);
   return p ? { title: p.name, description: p.blurb } : {};
 }
 
 export default async function Page({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  if (!getProduct(id)) notFound();
-  return <ProductView id={id} />;
+  const product = await liveProduct((await params).id);
+  if (!product) notFound();
+  return <ProductView product={product} />;
 }

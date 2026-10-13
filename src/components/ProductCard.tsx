@@ -7,7 +7,7 @@ import { basePrice } from '@/lib/pricing';
 import { useHydrated, useShop } from '@/lib/store';
 import { BagImage } from './BagImage';
 import { HeartIcon } from './Icons';
-import { priceText, usePrices } from './Prices';
+import { priceText, usePrices } from './Catalog';
 
 export function WishButton({ productId, className = 'heart' }: { productId: string; className?: string }) {
   const hydrated = useHydrated();
@@ -41,7 +41,7 @@ export function ProductCard({ product, leather }: { product: Product; leather?: 
     <article className="pcard">
       <div className="media">
         <Link href={`/products/${product.id}`} className="img-box plate" tabIndex={-1} aria-hidden="true">
-          <BagImage productId={product.id} leather={leather} />
+          <BagImage productId={product.id} product={product} leather={leather} />
         </Link>
         <WishButton productId={product.id} />
       </div>
@@ -66,7 +66,7 @@ export function MiniCard({ product }: { product: Product }) {
     <article className="mini-card">
       <Link href={`/products/${product.id}`} style={{ display: 'block' }}>
         <div className="img-box plate">
-          <BagImage productId={product.id} />
+          <BagImage productId={product.id} product={product} />
         </div>
         <span className="name">{product.name}</span>
         <span className="sub tnum">{priceText(price)}</span>

@@ -22,6 +22,20 @@
       "when": 1791725304921,
       "tag": "0002_refunded_amount",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791914012265,
+      "tag": "0003_products",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791914013252,
+      "tag": "0004_products_backfill",
+      "breakpoints": true
     }
   ]
 }

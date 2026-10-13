@@ -1,11 +1,11 @@
-import { PRODUCTS } from '@/lib/catalog';
 import { basePrice } from '@/lib/pricing';
 import { getPriceList } from '@/server/prices';
+import { getCatalog } from '@/server/products';
 
 export const dynamic = 'force-dynamic';
 
-/** Catalogue with the current price in the store currency (null = not for sale). */
+/** Live catalogue with the current price in the store currency (null = not for sale). */
 export async function GET() {
-  const pl = await getPriceList();
-  return Response.json(PRODUCTS.map((p) => ({ ...p, price: basePrice(pl, p.id), currency: pl.currency })));
+  const [pl, products] = await Promise.all([getPriceList(), getCatalog()]);
+  return Response.json(products.map((p) => ({ ...p, price: basePrice(pl, p.id), currency: pl.currency })));
 }

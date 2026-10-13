@@ -1,6 +1,6 @@
-import { configLine, getProduct } from '@/lib/catalog';
+import { configLine } from '@/lib/catalog';
 import { money } from '@/lib/money';
-import { type Order, STAGE_LABELS, type Stage } from '@/lib/orders';
+import { type Order, piecesLabel, STAGE_LABELS, type Stage } from '@/lib/orders';
 import { env } from './env';
 
 export interface Mail {
@@ -38,7 +38,7 @@ export function mailConfigured(): boolean {
 }
 
 function lines(o: Order): string {
-  return o.lines.map((l) => `  ${getProduct(l.productId)?.name ?? l.productId} × ${l.qty} — ${configLine(l)}`).join('\n');
+  return o.lines.map((l) => `  ${piecesLabel(l)} × ${l.qty} — ${configLine(l)}`).join('\n');
 }
 
 export function signInMail(to: string, link: string): Mail {

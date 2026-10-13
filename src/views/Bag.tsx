@@ -5,8 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { EmptyBagArt } from '@/components/Art';
 import { BagImage } from '@/components/BagImage';
-import { priceText, usePrices } from '@/components/Prices';
-import { configLine, getProduct } from '@/lib/catalog';
+import { priceText, useCatalog, usePrices } from '@/components/Catalog';
+import { configLine } from '@/lib/catalog';
 import { money } from '@/lib/money';
 import { lineTotal } from '@/lib/pricing';
 import { type CheckoutForm, useHydrated, useShop } from '@/lib/store';
@@ -41,6 +41,7 @@ export function BagView() {
   const sessionId = useSearchParams().get('session_id');
   const router = useRouter();
   const pl = usePrices();
+  const catalog = useCatalog();
   const confirming = !!sessionId && step < 2 && !failure;
 
   // Back from Stripe: wait for the webhook (or the status check) to turn the session into an order.
@@ -71,7 +72,8 @@ export function BagView() {
     };
   }, [sessionId, clearCart]);
 
-  const totalsByLine = cart.map((l) => lineTotal(pl, l));
+  // A line whose product was taken off sale has no price, which blocks checkout until it is removed.
+  const totalsByLine = cart.map((l) => (catalog.product(l.productId) ? lineTotal(pl, l) : null));
   const unavailable = totalsByLine.some((t) => t === null);
   const sub = totalsByLine.reduce<number>((n, t) => n + (t ?? 0), 0);
   const errors = { ...serverErrors, ...validate(form) };
@@ -177,7 +179,7 @@ export function BagView() {
           <EmptyBagArt />
           <h3 style={{ margin: 0, fontWeight: 400 }}>Your bag is empty.</h3>
           <p className="muted" style={{ maxWidth: '40ch', margin: 0 }}>Which is, structurally speaking, the lightest it will ever be.</p>
-          <Link className="btn btn-primary" style={{ padding: '12px 20px' }} href="/shop">Browse the eight</Link>
+          <Link className="btn btn-primary" style={{ padding: '12px 20px' }} href="/shop">Browse the collection</Link>
         </div>
       )}
 
@@ -185,12 +187,26 @@ export function BagView() {
         <div className="split split-cart">
           <div>
             {cart.map((l, i) => {
-              const p = getProduct(l.productId);
-              if (!p) return null;
+              const p = catalog.product(l.productId);
+              if (!p) {
+                return (
+                  <div key={i} className="cart-line">
+                    <div className="thumb" />
+                    <div>
+                      <h4 style={{ margin: '0 0 4px', fontWeight: 400, fontSize: 22 }}>No longer offered</h4>
+                      <div className="muted" style={{ fontSize: 13, lineHeight: 1.8 }}>This piece has been taken out of the collection.</div>
+                      <div className="qty">
+                        <button className="btn btn-ghost" style={{ fontSize: 11 }} onClick={() => removeLine(i)}>Remove</button>
+                      </div>
+                    </div>
+                    <div className="err line-total" style={{ fontSize: 13 }}>Not available</div>
+                  </div>
+                );
+              }
               return (
                 <div key={i} className="cart-line">
                   <div className="thumb">
-                    <BagImage productId={l.productId} leather={l.leather} hardware={l.hardware} strap={l.strap} width={312} height={312} />
+                    <BagImage productId={l.productId} product={p} leather={l.leather} hardware={l.hardware} strap={l.strap} width={312} height={312} />
                   </div>
                   <div>
                     <h4 style={{ margin: '0 0 4px', fontWeight: 400, fontSize: 22 }}>{p.name}</h4>

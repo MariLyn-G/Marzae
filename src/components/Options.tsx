@@ -2,7 +2,7 @@
 
 import { money } from '@/lib/money';
 import { strapPrice } from '@/lib/pricing';
-import { usePrices } from './Prices';
+import { usePrices } from './Catalog';
 import { HARDWARE, LEATHERS, STRAPS, type HardwareId, type LeatherId, type StrapId } from '@/lib/catalog';
 
 export function HideSwatches({ value, onChange, size }: { value: LeatherId | null; onChange: (id: LeatherId) => void; size?: 'sm' | 'md' }) {

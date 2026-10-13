@@ -2,8 +2,8 @@
 
 import { ProductCard } from '@/components/ProductCard';
 import { HideSwatches } from '@/components/Options';
-import { usePrices } from '@/components/Prices';
-import { CATEGORIES, PRODUCTS } from '@/lib/catalog';
+import { useCatalog, usePrices } from '@/components/Catalog';
+import { CATEGORIES } from '@/lib/catalog';
 import { money } from '@/lib/money';
 import { basePrice } from '@/lib/pricing';
 import { type PriceBand, type SortKey, useShop } from '@/lib/store';
@@ -21,6 +21,10 @@ const GRID = (process.env.NEXT_PUBLIC_SHOP_GRID ?? '3') as '2' | '3' | '4';
 export function ShopView() {
   const { category, priceBand, hide, sort, query, setFilters, clearFilters } = useShop();
   const band = BANDS.find((b) => b.id === priceBand) ?? BANDS[0];
+  const { products } = useCatalog();
+  // The usual categories first, then any others the catalogue uses, only where something is live.
+  const used = new Set(products.map((p) => p.category));
+  const categories = [...CATEGORIES.filter((c) => used.has(c)), ...[...used].filter((c) => !CATEGORIES.includes(c))];
   const pl = usePrices();
   // Items without a price sort last and only show under "Any price".
   const price = (id: string) => basePrice(pl, id) ?? Infinity;
@@ -28,7 +32,7 @@ export function ShopView() {
 
   // Every bag is made in every hide, so the hide picker does not narrow the list. It re-renders
   // the cards in that hide and pre-selects it in the configurator.
-  let shown = PRODUCTS.filter(
+  let shown = products.filter(
     (p) => (category === 'All' || p.category === category) && (band.id === 'all' || band.test(price(p.id))) && (!q || `${p.name} ${p.category}`.toLowerCase().includes(q)),
   );
   if (sort === 'low') shown = [...shown].sort((a, b) => price(a.id) - price(b.id));
@@ -48,12 +52,12 @@ export function ShopView() {
           <div>
             <h6>Category</h6>
             <div className="filter-list">
-              {['All', ...CATEGORIES].map((c) => {
+              {['All', ...categories].map((c) => {
                 const on = category === c;
                 return (
                   <button key={c} className={on ? 'uline on on-fg' : 'uline'} aria-pressed={on} onClick={() => setFilters({ category: c })}>
                     <span>{c === 'All' ? 'All bags' : c}</span>
-                    <span className="n">{c === 'All' ? PRODUCTS.length : PRODUCTS.filter((p) => p.category === c).length}</span>
+                    <span className="n">{c === 'All' ? products.length : products.filter((p) => p.category === c).length}</span>
                   </button>
                 );
               })}
@@ -101,7 +105,13 @@ export function ShopView() {
           <div className={`grid-cards cols-${GRID}`}>
             {shown.map((p) => <ProductCard key={p.id} product={p} leather={hide ?? undefined} />)}
           </div>
-          {shown.length === 0 && (
+          {products.length === 0 && (
+            <div style={{ padding: '60px 0' }}>
+              <h3 style={{ fontWeight: 400, marginBottom: 8 }}>The collection is being prepared.</h3>
+              <p className="muted">New pieces are on the bench. Come back soon.</p>
+            </div>
+          )}
+          {products.length > 0 && shown.length === 0 && (
             <div style={{ padding: '60px 0' }}>
               <h3 style={{ fontWeight: 400, marginBottom: 8 }}>Nothing under that filter.</h3>
               <p className="muted">Clear the filters and the whole collection returns.</p>

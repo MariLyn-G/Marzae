@@ -1,4 +1,4 @@
-import { type Configuration, getProduct, hardware, leather, strap } from './catalog';
+import { type Configuration, hardware, leather, strap } from './catalog';
 import type { Currency } from './money';
 
 export type Stage = 'new' | 'cutting' | 'stitching' | 'shipped' | 'delivered';
@@ -17,8 +17,9 @@ export interface CartLine extends Configuration {
   qty: number;
 }
 
-/** A priced line on an order. The price is fixed when the order is placed. */
+/** A priced line on an order. Name and price are fixed when the order is placed. */
 export interface LineItem extends CartLine {
+  productName: string;
   unitPrice: number;
 }
 
@@ -104,7 +105,7 @@ export function restore(o: Order, at: string): Order {
 }
 
 export function piecesLabel(l: LineItem): string {
-  return getProduct(l.productId)?.name ?? l.productId;
+  return l.productName || l.productId;
 }
 
 /** Quotes a cell and defuses leading = + - @ so spreadsheet apps do not run customer text as a formula. */

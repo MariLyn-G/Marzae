@@ -63,6 +63,8 @@ export const orderLines = pgTable(
     orderId: text('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }),
     position: integer('position').notNull(),
     productId: text('product_id').notNull(),
+    // The name when ordered, so renaming or retiring a product leaves past orders as they were.
+    productName: text('product_name').notNull().default(''),
     leather: text('leather').notNull(),
     hardware: text('hardware').notNull(),
     strap: text('strap').notNull(),
@@ -157,3 +159,45 @@ export const rateLimits = pgTable('rate_limits', {
   windowStart: timestamp('window_start', { withTimezone: true }).notNull(),
   count: integer('count').notNull(),
 });
+
+/** The catalogue. Edited at /atelier/products; only `live` rows are shown and sold. */
+export const products = pgTable(
+  'products',
+  {
+    id: text('id').primaryKey(),
+    numeral: text('numeral').notNull().default(''),
+    name: text('name').notNull(),
+    category: text('category').notNull(),
+    status: text('status').notNull().default('draft'), // draft | live | archived
+    position: integer('position').notNull().default(0),
+    // Real reviews only. New products start at 0 and the storefront hides the line.
+    rating: integer('rating').notNull().default(0),
+    reviewCount: integer('review_count').notNull().default(0),
+    dims: text('dims').notNull().default(''),
+    volume: text('volume').notNull().default(''),
+    laptop: text('laptop').notNull().default(''),
+    weight: text('weight').notNull().default(''),
+    blurb: text('blurb').notNull().default(''),
+    spec3d: jsonb('spec3d').notNull(),
+    stillLeather: text('still_leather').notNull().default('black-oxide'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: text('updated_by'),
+  },
+  (t) => [index('products_status_position_idx').on(t.status, t.position)],
+);
+
+/** Product photography, shown instead of the 3D render. Lowest position is the main photo. */
+export const productPhotos = pgTable(
+  'product_photos',
+  {
+    id: serial('id').primaryKey(),
+    productId: text('product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull().default(0),
+    contentType: text('content_type').notNull(),
+    data: bytea('data').notNull(),
+    author: text('author'),
+    at: timestamp('at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('product_photos_product_idx').on(t.productId)],
+);

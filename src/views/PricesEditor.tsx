@@ -3,15 +3,19 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { getProduct, strap, type StrapId } from '@/lib/catalog';
+import { findProduct, type Product, strap, type StrapId } from '@/lib/catalog';
 import { CURRENCIES, type Currency, STORE_CURRENCY } from '@/lib/money';
-import { ALL_SKUS } from '@/lib/pricing';
+import { skusFor } from '@/lib/pricing';
 import type { PriceRow } from '@/server/prices';
 
-function skuLabel(s: string): string {
+function skuLabel(s: string, products: Product[]): string {
   if (s === 'initials') return 'Initials (surcharge)';
   const [kind, id] = s.split(':');
-  if (kind === 'product') return getProduct(id)?.name ?? id;
+  if (kind === 'product') {
+    const p = findProduct(products, id);
+    if (!p) return id;
+    return p.status === 'live' ? p.name : `${p.name} (${p.status})`;
+  }
   return `${strap(id as StrapId).name} (surcharge)`;
 }
 
@@ -25,7 +29,9 @@ function toDraft(rows: PriceRow[]): Record<string, string> {
  * Edits the price list. An empty cell means "not for sale in that currency". Orders keep
  * the price they were placed at; a change applies to the next checkout.
  */
-export function PricesEditor({ initial }: { initial: PriceRow[] }) {
+export function PricesEditor({ initial, products }: { initial: PriceRow[]; products: Product[] }) {
+  const ALL_SKUS = skusFor(products);
+  const label = (s: string) => skuLabel(s, products);
   const router = useRouter();
   const [saved, setSaved] = useState(initial);
   const [draft, setDraft] = useState(() => toDraft(initial));
@@ -40,7 +46,10 @@ export function PricesEditor({ initial }: { initial: PriceRow[] }) {
     }),
   );
   const invalid = changes.some((c) => c.amount !== null && !(Number.isInteger(c.amount) && c.amount >= 0 && c.amount <= 100_000));
-  const missingInStore = ALL_SKUS.filter((s) => !(draft[key(s, STORE_CURRENCY)] ?? '').trim());
+  // Only live products matter for what customers can buy.
+  const missingInStore = ALL_SKUS.filter(
+    (s) => !(draft[key(s, STORE_CURRENCY)] ?? '').trim() && (!s.startsWith('product:') || findProduct(products, s.slice(8))?.status === 'live'),
+  );
 
   const save = async () => {
     setBusy(true);
@@ -80,7 +89,7 @@ export function PricesEditor({ initial }: { initial: PriceRow[] }) {
         converted. Leave a cell empty to take that item off sale in that currency. Placed orders keep their price.
       </p>
       {missingInStore.length > 0 && (
-        <p className="err" role="status">Not for sale in {STORE_CURRENCY} right now: {missingInStore.map(skuLabel).join(', ')}.</p>
+        <p className="err" role="status">Not for sale in {STORE_CURRENCY} right now: {missingInStore.map(label).join(', ')}.</p>
       )}
 
       <div style={{ overflowX: 'auto', marginTop: 24 }}>
@@ -99,7 +108,7 @@ export function PricesEditor({ initial }: { initial: PriceRow[] }) {
           <tbody>
             {ALL_SKUS.map((s) => (
               <tr key={s}>
-                <td>{skuLabel(s)}</td>
+                <td>{label(s)}</td>
                 {CURRENCIES.map((c) => {
                   const m = meta(s, c);
                   return (
@@ -107,7 +116,7 @@ export function PricesEditor({ initial }: { initial: PriceRow[] }) {
                       <input
                         className="input tnum"
                         inputMode="numeric"
-                        aria-label={`${skuLabel(s)}, ${c}`}
+                        aria-label={`${label(s)}, ${c}`}
                         title={m ? `Last set by ${m.updatedBy ?? 'unknown'} on ${m.updatedAt.slice(0, 10)}` : 'Not for sale'}
                         placeholder="—"
                         value={draft[key(s, c)] ?? ''}

@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { SignOutButton } from '@/components/SignIn';
 import { getSession } from '@/server/auth';
 import { listOrders } from '@/server/orders-repo';
+import { loadProducts } from '@/server/products';
 import { AtelierView } from '@/views/Atelier';
 
 export const metadata: Metadata = { title: 'Atelier — order management', robots: { index: false } };
@@ -19,5 +20,6 @@ export default async function Page() {
       </section>
     );
   }
-  return <AtelierView initialOrders={await listOrders()} staff={session.email} />;
+  const [orders, products] = await Promise.all([listOrders(), loadProducts()]);
+  return <AtelierView initialOrders={orders} staff={session.email} products={products} />;
 }

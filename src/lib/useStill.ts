@@ -21,13 +21,13 @@ function requestStill(items: StillItem[], opts: StillOptions): Promise<string> {
   return p;
 }
 
-/** A cached PNG blob URL of the given bag(s), or null until it is ready. */
+/** A cached PNG blob URL of the given bag(s), or null until it is ready. No items, no render. */
 export function useStill(items: StillItem[], opts: StillOptions = {}): string | null {
   const key = JSON.stringify([items, opts]);
   const [url, setUrl] = useState<{ key: string; url: string } | null>(null);
 
   useEffect(() => {
-    if (resolved.has(key)) return;
+    if (items.length === 0 || resolved.has(key)) return;
     let live = true;
     const [i, o] = JSON.parse(key) as [StillItem[], StillOptions];
     requestStill(i, o)
@@ -36,7 +36,10 @@ export function useStill(items: StillItem[], opts: StillOptions = {}): string | 
     return () => {
       live = false;
     };
+    // `items` is read through `key`, which changes whenever they do.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
+  if (items.length === 0) return null;
   return resolved.get(key) ?? (url?.key === key ? url.url : null);
 }

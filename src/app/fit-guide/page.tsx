@@ -1,15 +1,15 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { CapacityArt } from '@/components/Art';
-import { PRODUCTS } from '@/lib/catalog';
 import { money } from '@/lib/money';
 import { basePrice } from '@/lib/pricing';
 import { getPriceList } from '@/server/prices';
+import { getCatalog } from '@/server/products';
 
 export const metadata: Metadata = { title: 'Fit guide' };
 
 export default async function Page() {
-  const pl = await getPriceList();
+  const [pl, products] = await Promise.all([getPriceList(), getCatalog()]);
   return (
     <section className="wrap page">
       <div className="kicker">Guide</div>
@@ -35,9 +35,9 @@ export default async function Page() {
             </tr>
           </thead>
           <tbody>
-            {PRODUCTS.map((p) => (
+            {products.map((p) => (
               <tr key={p.id}>
-                <td><Link href={`/products/${p.id}`}>No. {p.numeral} — {p.name}</Link></td>
+                <td><Link href={`/products/${p.id}`}>{p.numeral ? `No. ${p.numeral} — ` : ''}{p.name}</Link></td>
                 <td className="tnum">{p.dims}</td>
                 <td className="tnum">{p.volume}</td>
                 <td className="tnum">{p.laptop}</td>

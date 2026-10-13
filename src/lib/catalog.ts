@@ -2,7 +2,12 @@ export type LeatherId = 'black-oxide' | 'bone' | 'chestnut' | 'espresso' | 'ash'
 export type HardwareId = 'antique-brass' | 'brushed-steel' | 'blackened';
 export type StrapId = 'as-made' | 'sling' | 'chain';
 export type Handle = 'twin' | 'top' | 'sling' | 'chain' | 'none';
-export type Category = 'Totes' | 'Backpacks' | 'Crossbody' | 'Laptop & work' | 'Evening';
+/** Categories the shop sidebar lists first. A product may use any other name too. */
+export const CATEGORIES = ['Totes', 'Backpacks', 'Crossbody', 'Laptop & work', 'Evening'];
+
+export type ProductStatus = 'draft' | 'live' | 'archived';
+export const PRODUCT_STATUSES: ProductStatus[] = ['draft', 'live', 'archived'];
+export const HANDLES: Handle[] = ['twin', 'top', 'sling', 'chain', 'none'];
 
 export interface Spec3D {
   w: number;
@@ -14,11 +19,17 @@ export interface Spec3D {
   pocket: boolean;
 }
 
+/** A style in the catalogue. Stored in the `products` table and edited at /atelier/products. */
 export interface Product {
+  /** URL slug, fixed once created: orders and prices refer to it. */
   id: string;
   numeral: string;
   name: string;
-  category: Category;
+  category: string;
+  /** Only `live` products are shown and sold. */
+  status: ProductStatus;
+  /** Order in the shop, ascending. */
+  position: number;
   rating: number;
   reviewCount: number;
   dims: string;
@@ -29,6 +40,8 @@ export interface Product {
   spec3d: Spec3D;
   /** Hide used for the catalogue still render. */
   stillLeather: LeatherId;
+  /** Ids of uploaded product photos, main photo first. Without any, the 3D render is shown. */
+  photos: number[];
 }
 
 export interface Leather {
@@ -71,67 +84,8 @@ export const STRAPS: Strap[] = [
   { id: 'chain', name: 'Chain strap' },
 ];
 
-export const CATEGORIES: Category[] = ['Totes', 'Backpacks', 'Crossbody', 'Laptop & work', 'Evening'];
-
-export const PRODUCTS: Product[] = [
-  {
-    id: 'aperture-tote', numeral: 'I', name: 'Aperture Tote', category: 'Totes', rating: 5, reviewCount: 142,
-    dims: '38 × 30 × 13 cm', volume: '14 L', laptop: '15"', weight: '0.94 kg', stillLeather: 'chestnut',
-    spec3d: { w: 1.5, h: 1.22, d: 0.5, r: 0.07, handle: 'twin', flap: false, pocket: true },
-    blurb: 'A single sheet of shoulder hide folded into a square mouth. No closure, no apology — the structure holds itself open at the top and closes flat under the arm.',
-  },
-  {
-    id: 'meridian-backpack', numeral: 'II', name: 'Meridian Backpack', category: 'Backpacks', rating: 5, reviewCount: 96,
-    dims: '29 × 42 × 16 cm', volume: '19 L', laptop: '16"', weight: '1.18 kg', stillLeather: 'black-oxide',
-    spec3d: { w: 1.14, h: 1.46, d: 0.62, r: 0.13, handle: 'top', flap: true, pocket: true },
-    blurb: 'A load-bearing spine in moulded leather with a flap that shortens as the bag fills. Made for the seven o’clock platform and the evening that follows it, without changing bags.',
-  },
-  {
-    id: 'slip-crossbody', numeral: 'III', name: 'Slip Crossbody', category: 'Crossbody', rating: 5, reviewCount: 211,
-    dims: '26 × 18 × 8 cm', volume: '4 L', laptop: '—', weight: '0.42 kg', stillLeather: 'espresso',
-    spec3d: { w: 1.02, h: 0.7, d: 0.3, r: 0.09, handle: 'sling', flap: true, pocket: false },
-    blurb: 'The smallest structure we make that still stands on a table. A phone, a card holder, a key — and a strap long enough to wear across the chest over a winter coat.',
-  },
-  {
-    id: 'ledger-work-bag', numeral: 'IV', name: 'Ledger Work Bag', category: 'Laptop & work', rating: 5, reviewCount: 74,
-    dims: '42 × 29 × 11 cm', volume: '13 L', laptop: '16"', weight: '1.06 kg', stillLeather: 'bone',
-    spec3d: { w: 1.66, h: 1.14, d: 0.44, r: 0.05, handle: 'twin', flap: true, pocket: false },
-    blurb: 'Square corners, right angles, and a flap that folds on a scored line rather than a crease. Documents arrive flat; so, generally, do you.',
-  },
-  {
-    id: 'signal-clutch', numeral: 'V', name: 'Signal Clutch', category: 'Evening', rating: 4, reviewCount: 63,
-    dims: '30 × 15 × 5 cm', volume: '2 L', laptop: '—', weight: '0.31 kg', stillLeather: 'ash',
-    spec3d: { w: 1.2, h: 0.58, d: 0.18, r: 0.06, handle: 'chain', flap: true, pocket: false },
-    blurb: 'An envelope with a machined spine. Carry it in the hand, or drop the chain and wear it short at the hip.',
-  },
-  {
-    id: 'aperture-mini', numeral: 'VI', name: 'Aperture Mini', category: 'Totes', rating: 5, reviewCount: 118,
-    dims: '26 × 23 × 10 cm', volume: '6 L', laptop: '—', weight: '0.61 kg', stillLeather: 'chestnut',
-    spec3d: { w: 1.04, h: 0.92, d: 0.4, r: 0.07, handle: 'twin', flap: false, pocket: true },
-    blurb: 'The tote at three-quarter scale, with the same folded mouth and standing base. Takes a paperback and a bottle upright.',
-  },
-  {
-    id: 'meridian-daypack', numeral: 'VII', name: 'Meridian Daypack', category: 'Backpacks', rating: 4, reviewCount: 58,
-    dims: '27 × 35 × 13 cm', volume: '14 L', laptop: '14"', weight: '0.88 kg', stillLeather: 'black-oxide',
-    spec3d: { w: 1.06, h: 1.2, d: 0.52, r: 0.15, handle: 'top', flap: true, pocket: true },
-    blurb: 'Softer in the shoulder than the Meridian, rounder at every corner, and light enough to fold into a weekend bag once you arrive.',
-  },
-  {
-    id: 'ledger-folio', numeral: 'VIII', name: 'Ledger Folio', category: 'Laptop & work', rating: 4, reviewCount: 41,
-    dims: '40 × 27 × 5 cm', volume: '4 L', laptop: '14"', weight: '0.52 kg', stillLeather: 'espresso',
-    spec3d: { w: 1.6, h: 1.06, d: 0.2, r: 0.04, handle: 'none', flap: true, pocket: false },
-    blurb: 'Two panels and a fold. It slides into the Meridian, or goes to the meeting on its own under one arm.',
-  },
-];
-
-export const REVIEWS = [
-  { body: 'Three years on the same commute and the hide has gone the colour of dark honey. Nothing has stretched.', who: 'Marta L.', bag: 'Aperture Tote' },
-  { body: 'I turned it in the viewer for half an hour before ordering, then it arrived exactly as it looked on screen.', who: 'Jonas R.', bag: 'Meridian Backpack' },
-  { body: 'The initials are barely there, which is precisely the point. Quiet, heavy, correct.', who: 'Ines de V.', bag: 'Ledger Work Bag' },
-];
-
-export function getProduct(id: string): Product | undefined {
-  return PRODUCTS.find((p) => p.id === id);
+export function findProduct(products: Product[], id: string): Product | undefined {
+  return products.find((p) => p.id === id);
 }
 
 export function leather(id: LeatherId): Leather {
@@ -194,11 +148,45 @@ export function configLine(cfg: Configuration): string {
   return parts.join(' · ');
 }
 
-/** Stylist mapping: answers (carry, where, how quiet) → exactly one product. */
-export function stylistPick(a: number, b: number, c: number): Product {
-  let id: string;
-  if (a === 0) id = b === 0 ? 'ledger-work-bag' : c === 1 ? 'meridian-backpack' : 'meridian-daypack';
-  else if (a === 1) id = b === 2 ? 'signal-clutch' : 'slip-crossbody';
-  else id = b === 0 ? 'meridian-backpack' : c === 1 ? 'aperture-tote' : 'aperture-mini';
-  return getProduct(id)!;
+/** First number in a free-text field: '14 L' → 14, '15"' → 15, '—' → null. */
+export function firstNumber(text: string): number | null {
+  const m = text.replace(',', '.').match(/\d+(\.\d+)?/);
+  return m ? Number(m[0]) : null;
+}
+
+/**
+ * The stylist: three answers (carry, where, how quiet) → exactly one live product, scored
+ * from each product's own fields so it works for whatever the catalogue holds.
+ * Ties go to the product listed first in the shop.
+ */
+export function stylistPick(products: Product[], carry: number, where: number, quiet: number): Product | undefined {
+  const score = (p: Product): number => {
+    const { w, h, d } = p.spec3d;
+    // Litres from the volume field, else a rough figure from the 3D proportions.
+    const litres = firstNumber(p.volume) ?? w * h * d * 15;
+    const laptop = firstNumber(p.laptop);
+    const cat = p.category.toLowerCase();
+    const is = (...words: string[]) => words.some((x) => cat.includes(x));
+    // What you carry decides most, then where it goes, then how quiet.
+    let s = 0;
+    if (carry === 0) s += laptop ? 10 + laptop / 4 : -10; // a laptop and a life
+    if (carry === 1) s += (litres <= 6 ? 10 - litres : -litres) - (laptop ? 6 : 0); // cards, phone, keys
+    if (carry === 2) s += litres; // everything, always
+    if (where === 0) s += is('work', 'laptop', 'brief', 'office') ? 3 : is('evening', 'clutch') ? -3 : 0;
+    if (where === 1) s += is('backpack', 'crossbody', 'daypack', 'sling') ? 3 : is('evening', 'clutch') ? -3 : 0;
+    if (where === 2) s += is('evening', 'clutch') ? 3 : is('crossbody') ? 1 : 0;
+    const presence = w * h;
+    s += quiet === 1 ? presence * 2 : -presence * 2;
+    return s;
+  };
+  let best: Product | undefined;
+  let bestScore = -Infinity;
+  for (const p of products) {
+    const sc = score(p);
+    if (sc > bestScore) {
+      best = p;
+      bestScore = sc;
+    }
+  }
+  return best;
 }

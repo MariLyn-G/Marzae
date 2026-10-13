@@ -1,6 +1,6 @@
 // Prices live in the database (atelier → Prices) as explicit amounts per currency.
 // This module is shared by server and browser and only does lookups and sums.
-import { type Configuration, PRODUCTS, STRAPS, type StrapId } from './catalog';
+import { type Configuration, type Product, STRAPS, type StrapId } from './catalog';
 import type { Currency } from './money';
 
 /** Keys in the price list: one per product, one per paid strap, one for initials. */
@@ -10,12 +10,14 @@ export const sku = {
   initials: 'initials',
 } as const;
 
-/** Every sku the price list accepts, in display order. */
-export const ALL_SKUS: string[] = [
-  ...PRODUCTS.map((p) => sku.product(p.id)),
-  ...STRAPS.filter((s) => s.id !== 'as-made').map((s) => sku.strap(s.id)),
-  sku.initials,
-];
+/** Every sku the price list accepts for these products, in display order. */
+export function skusFor(products: Pick<Product, 'id'>[]): string[] {
+  return [
+    ...products.map((p) => sku.product(p.id)),
+    ...STRAPS.filter((s) => s.id !== 'as-made').map((s) => sku.strap(s.id)),
+    sku.initials,
+  ];
+}
 
 export interface PriceList {
   currency: Currency;

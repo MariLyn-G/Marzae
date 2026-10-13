@@ -1,17 +1,31 @@
-// Loads the prototype's seed orders. `npm run db:seed` skips if orders exist; `-- --reset` wipes them first.
+// Development data: the eight reference products, their EUR prices, and the prototype's orders.
+// Products and prices are added if missing (edits are kept). Orders are skipped if any exist;
+// `-- --reset` wipes orders first. Never run this against production.
 import { sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import * as schema from '../src/server/db/schema';
+import { REFERENCE_PRICES_EUR, REFERENCE_PRODUCTS } from '../src/server/reference-catalog';
 import { SEED_ORDERS } from '../src/server/seed-data';
 
-const { orders, orderLines, orderEvents, orderNotes } = schema;
+const { orders, orderLines, orderEvents, orderNotes, products, prices } = schema;
 const at = (d: string) => new Date(d + 'T10:00:00Z');
 
 async function main() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL ?? 'postgresql://marzae:marzae@localhost:5432/marzae' });
   const db = drizzle(pool, { schema });
   const reset = process.argv.includes('--reset');
+
+  const added = await db
+    .insert(products)
+    .values(REFERENCE_PRODUCTS.map(({ photos: _photos, ...p }) => (void _photos, { ...p, updatedBy: 'seed' })))
+    .onConflictDoNothing()
+    .returning({ id: products.id });
+  await db
+    .insert(prices)
+    .values(Object.entries(REFERENCE_PRICES_EUR.amounts).map(([sku, amount]) => ({ sku, currency: 'EUR', amount, updatedBy: 'seed' })))
+    .onConflictDoNothing();
+  console.log(`Reference products: ${added.length} added, ${REFERENCE_PRODUCTS.length - added.length} already there.`);
 
   if (reset) {
     await db.execute(sql`truncate orders, checkouts restart identity cascade`);

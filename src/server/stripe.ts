@@ -1,5 +1,5 @@
 import Stripe from 'stripe';
-import { configLine, getProduct } from '@/lib/catalog';
+import { configLine } from '@/lib/catalog';
 import { env } from './env';
 import type { CheckoutPayload } from './checkout';
 
@@ -22,7 +22,7 @@ export function checkoutSessionParams(p: CheckoutPayload): Stripe.Checkout.Sessi
         // EUR, USD and GBP all have two decimals; amounts are whole units.
         currency: p.currency.toLowerCase(),
         unit_amount: l.unitPrice * 100,
-        product_data: { name: getProduct(l.productId)!.name, description: configLine(l) },
+        product_data: { name: l.productName, description: configLine(l) },
       },
     })),
     success_url: `${env.appUrl()}/bag?session_id={CHECKOUT_SESSION_ID}`,

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { SignOutButton } from '@/components/SignIn';
 import { BagImage } from '@/components/BagImage';
-import { getProduct, hardware, leather, strap } from '@/lib/catalog';
+import { findProduct, hardware, leather, type Product, strap } from '@/lib/catalog';
 import { downscaleImage } from '@/lib/downscale';
 import { type Currency, money } from '@/lib/money';
 import {
@@ -59,7 +59,8 @@ async function call(url: string, method: string, body?: unknown): Promise<Result
   }
 }
 
-export function AtelierView({ initialOrders, staff }: { initialOrders: Order[]; staff: string }) {
+/** `products` holds every status, so the bench sheet still shows styles taken off sale. */
+export function AtelierView({ initialOrders, staff, products }: { initialOrders: Order[]; staff: string; products: Product[] }) {
   const router = useRouter();
   const [orders, setOrders] = useState(initialOrders);
   const [busy, setBusy] = useState(false);
@@ -154,6 +155,9 @@ export function AtelierView({ initialOrders, staff }: { initialOrders: Order[]; 
           <a className="btn btn-secondary" style={{ padding: '10px 18px', fontSize: 11, letterSpacing: '0.18em' }} href={csvUrl(tab, q)} download>
             Export CSV
           </a>
+          <Link className="btn btn-secondary" style={{ padding: '10px 18px', fontSize: 11, letterSpacing: '0.18em' }} href="/atelier/products">
+            Products
+          </Link>
           <Link className="btn btn-secondary" style={{ padding: '10px 18px', fontSize: 11, letterSpacing: '0.18em' }} href="/atelier/prices">
             Prices
           </Link>
@@ -327,10 +331,10 @@ export function AtelierView({ initialOrders, staff }: { initialOrders: Order[]; 
               {sel.lines.map((l, i) => (
                 <div key={i} className="bench-line">
                   <div className="thumb sm">
-                    <BagImage productId={l.productId} leather={l.leather} hardware={l.hardware} strap={l.strap} width={216} height={216} />
+                    <BagImage productId={l.productId} product={findProduct(products, l.productId)} leather={l.leather} hardware={l.hardware} strap={l.strap} width={216} height={216} />
                   </div>
                   <div style={{ fontSize: 12.5, lineHeight: 1.7 }}>
-                    <div className="serif" style={{ fontSize: 18 }}>{getProduct(l.productId)?.name} × {l.qty}</div>
+                    <div className="serif" style={{ fontSize: 18 }}>{piecesLabel(l)} × {l.qty}</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span className="dot" style={{ width: 10, height: 10, background: leather(l.leather).hex }} />
                       {leather(l.leather).name} · {hardware(l.hardware).name}

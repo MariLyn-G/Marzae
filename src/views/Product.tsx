@@ -9,16 +9,16 @@ import { MiniCard } from '@/components/ProductCard';
 import {
   cleanInitials,
   colorsFor,
-  getProduct,
   hardware,
   leather,
-  PRODUCTS,
+  type Product,
   specFor,
   stars,
   strap,
 } from '@/lib/catalog';
 import type { ViewName } from '@/lib/bag3d';
-import { priceText, usePrices } from '@/components/Prices';
+import { productPhotoUrl } from '@/components/BagImage';
+import { priceText, useCatalog, usePrices } from '@/components/Catalog';
 import { initialsPrice, unitPrice } from '@/lib/pricing';
 import { useShop } from '@/lib/store';
 
@@ -29,10 +29,8 @@ const VIEWS: { id: ViewName; label: string }[] = [
   { id: 'top', label: 'Top' },
 ];
 
-const LOOKS = ['Worn under a coat', 'Across the body', 'In the hand'];
-
-export function ProductView({ id }: { id: string }) {
-  const product = getProduct(id)!;
+export function ProductView({ product }: { product: Product }) {
+  const { products } = useCatalog();
   const router = useRouter();
   const config = useShop((s) => s.config);
   const setConfig = useShop((s) => s.setConfig);
@@ -50,7 +48,7 @@ export function ProductView({ id }: { id: string }) {
   const price = unitPrice(pl, product.id, config);
   const initialsCost = initialsPrice(pl);
   const initials = config.initials.trim();
-  const related = PRODUCTS.filter((p) => p.id !== product.id).slice(0, 4);
+  const related = products.filter((p) => p.id !== product.id).slice(0, 4);
 
   const specRows = [
     ['Dimensions', product.dims],
@@ -105,21 +103,26 @@ export function ProductView({ id }: { id: string }) {
             </div>
             <span className="micro hint">Drag to turn</span>
           </div>
-          <div className="looks">
-            {LOOKS.map((l) => (
-              <div key={l} className="plate">
-                <div className="slot">{l}</div>
-              </div>
-            ))}
-          </div>
+          {product.photos.length > 0 && (
+            <div className="looks">
+              {product.photos.map((id, i) => (
+                <a key={id} className="plate" href={productPhotoUrl(product.id, id)} target="_blank" rel="noreferrer">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- served from our own API, sized by CSS */}
+                  <img src={productPhotoUrl(product.id, id)} alt={`${product.name}, photo ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                </a>
+              ))}
+            </div>
+          )}
         </div>
 
         <div>
-          <div className="kicker tnum">No. {product.numeral} — {product.category}</div>
+          <div className="kicker tnum">{product.numeral ? `No. ${product.numeral} — ` : ''}{product.category}</div>
           <h1 style={{ fontSize: 46, fontWeight: 400, marginBottom: 10 }}>{product.name}</h1>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, marginBottom: 18 }}>
             <span className="serif tnum" style={{ fontSize: 28 }}>{priceText(price)}</span>
-            <span className="muted" style={{ fontSize: 13 }}>{stars(product.rating)} · {product.reviewCount} reviews</span>
+            {product.reviewCount > 0 && (
+              <span className="muted" style={{ fontSize: 13 }}>{stars(product.rating)} · {product.reviewCount} reviews</span>
+            )}
           </div>
           <p className="justify" style={{ maxWidth: '48ch' }}>{product.blurb}</p>
           <hr className="hr" />
@@ -182,14 +185,18 @@ export function ProductView({ id }: { id: string }) {
       </div>
 
       <div className="wrap" style={{ paddingTop: 110, paddingBottom: 110 }}>
-        <hr className="hr" />
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 16, flexWrap: 'wrap', paddingTop: 28, marginBottom: 24 }}>
-          <h2 style={{ margin: 0, fontSize: 34, fontWeight: 400 }}>You may also like</h2>
-          <Link className="btn btn-ghost" style={{ paddingLeft: 0 }} href="/stylist">Ask the stylist →</Link>
-        </div>
-        <div className="grid-cards cols-4">
-          {related.map((p) => <MiniCard key={p.id} product={p} />)}
-        </div>
+        {related.length > 0 && (
+          <>
+            <hr className="hr" />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 16, flexWrap: 'wrap', paddingTop: 28, marginBottom: 24 }}>
+              <h2 style={{ margin: 0, fontSize: 34, fontWeight: 400 }}>You may also like</h2>
+              <Link className="btn btn-ghost" style={{ paddingLeft: 0 }} href="/stylist">Ask the stylist →</Link>
+            </div>
+            <div className="grid-cards cols-4">
+              {related.map((p) => <MiniCard key={p.id} product={p} />)}
+            </div>
+          </>
+        )}
       </div>
     </section>
   );

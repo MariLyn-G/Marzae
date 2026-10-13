@@ -7,7 +7,6 @@ import {
   type Configuration,
   DEFAULT_CONFIG,
   type LeatherId,
-  getProduct,
 } from './catalog';
 import type { CartLine } from './orders';
 
@@ -72,7 +71,6 @@ export const useShop = create<ShopState>()(
       toggleWish: (id) =>
         set((s) => ({ wishlist: s.wishlist.includes(id) ? s.wishlist.filter((w) => w !== id) : [...s.wishlist, id] })),
       addToCart: (productId, cfg) => {
-        if (!getProduct(productId)) return;
         const c = cfg ?? get().config;
         const line: CartLine = { productId, ...c, initials: c.initials.trim().toUpperCase(), qty: 1 };
         set((s) => ({ cart: [...s.cart, line] }));

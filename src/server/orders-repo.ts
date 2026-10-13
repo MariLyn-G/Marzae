@@ -65,6 +65,7 @@ async function load(conn: Conn, where: SQL | undefined, lock = false): Promise<O
       .filter((l) => l.orderId === r.id)
       .map((l) => ({
         productId: l.productId,
+        productName: l.productName,
         leather: l.leather as LeatherId,
         hardware: l.hardware as HardwareId,
         strap: l.strap as StrapId,

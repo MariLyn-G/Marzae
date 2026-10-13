@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { HARDWARE, LEATHERS, STRAPS, getProduct, strap } from '@/lib/catalog';
+import { HARDWARE, LEATHERS, STRAPS, findProduct, type Product, strap } from '@/lib/catalog';
 import type { Currency } from '@/lib/money';
 import { type LineItem, orderTotal } from '@/lib/orders';
 import { type PriceList, basePrice, strapPrice, unitPrice } from '@/lib/pricing';
@@ -8,7 +8,8 @@ const ids = <T extends { id: string }>(xs: T[]) => xs.map((x) => x.id) as [T['id
 const text = (max: number) => z.string().trim().min(1, 'Required').max(max);
 
 export const lineInput = z.object({
-  productId: z.string().refine((id) => !!getProduct(id), 'Unknown product'),
+  // Checked against the live catalogue in priceLines.
+  productId: z.string().min(1).max(60),
   leather: z.enum(ids(LEATHERS)),
   hardware: z.enum(ids(HARDWARE)),
   strap: z.enum(ids(STRAPS)),
@@ -41,20 +42,28 @@ export type CheckoutInput = z.infer<typeof checkoutInput>;
 
 export type Priced = { ok: true; lines: LineItem[]; total: number } | { ok: false; unavailable: string[] };
 
-/** Prices every line from the price list. Client-sent prices are never trusted. */
-export function priceLines(pl: PriceList, lines: CheckoutInput['lines']): Priced {
+/**
+ * Prices every line from the live catalogue and price list. Client-sent prices are never
+ * trusted, and a product that is not live cannot be bought.
+ */
+export function priceLines(pl: PriceList, live: Product[], lines: CheckoutInput['lines']): Priced {
   const priced: LineItem[] = [];
   const unavailable: string[] = [];
   for (const l of lines) {
+    const product = findProduct(live, l.productId);
+    if (!product) {
+      unavailable.push('a piece that is no longer offered');
+      continue;
+    }
     const u = unitPrice(pl, l.productId, l);
     if (u === null) {
-      const name = getProduct(l.productId)!.name;
+      const name = product.name;
       // Name the part that is off sale, so the customer knows what to change.
       if (basePrice(pl, l.productId) === null) unavailable.push(name);
       else if (strapPrice(pl, l.strap) === null) unavailable.push(`${name} with ${strap(l.strap).name.toLowerCase()}`);
       else unavailable.push(`${name} with initials`);
     }
-    else priced.push({ ...l, unitPrice: u });
+    else priced.push({ ...l, productName: product.name, unitPrice: u });
   }
   return unavailable.length ? { ok: false, unavailable } : { ok: true, lines: priced, total: orderTotal(priced) };
 }

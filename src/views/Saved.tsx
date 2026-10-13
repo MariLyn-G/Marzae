@@ -3,8 +3,7 @@
 import Link from 'next/link';
 import { BagImage } from '@/components/BagImage';
 import { useAddDefault } from '@/components/ProductCard';
-import { getProduct } from '@/lib/catalog';
-import { priceText, usePrices } from '@/components/Prices';
+import { priceText, useCatalog, usePrices } from '@/components/Catalog';
 import { basePrice } from '@/lib/pricing';
 import { useHydrated, useShop } from '@/lib/store';
 
@@ -14,7 +13,9 @@ export function SavedView() {
   const toggle = useShop((s) => s.toggleWish);
   const add = useAddDefault();
   const pl = usePrices();
-  const items = hydrated ? wishlist.map((id) => getProduct(id)).filter((p) => !!p) : [];
+  const catalog = useCatalog();
+  // Saved products that were taken off sale drop out of the list.
+  const items = hydrated ? wishlist.map((id) => catalog.product(id)).filter((p) => !!p) : [];
 
   return (
     <section className="wrap page">
@@ -32,7 +33,7 @@ export function SavedView() {
           <article key={p.id} className="mini-card">
             <Link href={`/products/${p.id}`} style={{ display: 'block' }}>
               <div className="img-box plate" style={{ height: 280 }}>
-                <BagImage productId={p.id} />
+                <BagImage productId={p.id} product={p} />
               </div>
               <span className="name">{p.name}</span>
               <span className="sub tnum">{priceText(basePrice(pl, p.id))}</span>

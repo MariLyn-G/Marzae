@@ -2,7 +2,7 @@
 import type { Configuration, HardwareId, LeatherId, StrapId } from '@/lib/catalog';
 import { type LineItem, type Order, STAGES, addDays, orderTotal } from '@/lib/orders';
 import { unitPrice } from '@/lib/pricing';
-import { LAUNCH_PRICES_EUR } from './launch-prices';
+import { REFERENCE_PRICES_EUR, REFERENCE_PRODUCTS } from './reference-catalog';
 
 const STAGE_DAYS = [0, 3, 14, 40, 47];
 
@@ -38,7 +38,8 @@ function hydrate(s: Seed): Order {
       strap: l.strap ?? 'as-made',
       initials: l.initials ?? '',
     };
-    return { productId: l.productId, qty: 1, ...cfg, unitPrice: unitPrice(LAUNCH_PRICES_EUR, l.productId, cfg)! };
+    const productName = REFERENCE_PRODUCTS.find((p) => p.id === l.productId)!.name;
+    return { productId: l.productId, productName, qty: 1, ...cfg, unitPrice: unitPrice(REFERENCE_PRICES_EUR, l.productId, cfg)! };
   });
   const history: Order['history'] = [];
   for (let i = 0; i <= s.stage; i++) history.push({ stage: STAGES[i], at: addDays(s.date, STAGE_DAYS[i]) });

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { BagViewer } from '@/components/BagViewer';
 import { colorsFor, stylistPick } from '@/lib/catalog';
-import { priceText, usePrices } from '@/components/Prices';
+import { priceText, useCatalog, usePrices } from '@/components/Catalog';
 import { basePrice } from '@/lib/pricing';
 import { useShop } from '@/lib/store';
 
@@ -22,7 +22,8 @@ export function StylistView() {
   const answered = answers.filter((a) => a !== null).length;
   const [a, b, c] = answers;
   const pl = usePrices();
-  const pick = a !== null && b !== null && c !== null ? stylistPick(a, b, c) : null;
+  const { products } = useCatalog();
+  const pick = a !== null && b !== null && c !== null ? (stylistPick(products, a, b, c) ?? null) : null;
 
   return (
     <section className="wrap page">

@@ -3,27 +3,39 @@
 import Link from 'next/link';
 import { ChartIcon, CheckShieldIcon, CubeIcon, ShieldIcon, SparkleIcon, TruckIcon, UserIcon } from '@/components/Icons';
 import { ProductCard, useAddDefault } from '@/components/ProductCard';
-import { colorsFor, getProduct, PRODUCTS, REVIEWS, stars } from '@/lib/catalog';
-import { priceText, usePrices } from '@/components/Prices';
+import { colorsFor, type LeatherId, stars } from '@/lib/catalog';
+import { BagImage } from '@/components/BagImage';
+import { priceText, useCatalog, usePrices } from '@/components/Catalog';
 import { basePrice } from '@/lib/pricing';
 import { useStill } from '@/lib/useStill';
 
-const FEATURED = ['aperture-tote', 'meridian-backpack', 'ledger-work-bag', 'slip-crossbody'].map((id) => getProduct(id)!);
+const HERO_HIDES: LeatherId[] = ['bone', 'chestnut', 'black-oxide'];
+const NUMBER_WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve'];
 
+function countWord(n: number): string {
+  return NUMBER_WORDS[n] ?? String(n);
+}
+
+/** The first three live products side by side, rendered from their 3D models. */
 function HeroStill() {
-  const p = (id: string) => getProduct(id)!.spec3d;
+  const { products } = useCatalog();
+  const three = products.slice(0, 3);
   const url = useStill(
-    [
-      { spec: p('slip-crossbody'), colors: colorsFor('bone', 'antique-brass'), rotY: -0.3 },
-      { spec: p('aperture-tote'), colors: colorsFor('chestnut', 'antique-brass'), rotY: -0.6 },
-      { spec: p('meridian-backpack'), colors: colorsFor('black-oxide', 'antique-brass'), rotY: -0.9 },
-    ],
+    three.map((p, i) => ({ spec: p.spec3d, colors: colorsFor(HERO_HIDES[i], 'antique-brass'), rotY: -0.3 - 0.3 * i })),
     { width: 1800, height: 820, gap: 0.55, margin: 1.55 },
   );
+  // A photographed lead product looks better than a render; use its photo instead.
+  if (products[0]?.photos.length) {
+    return (
+      <div className="still plate">
+        <BagImage productId={products[0].id} product={products[0]} width={1800} height={820} />
+      </div>
+    );
+  }
   return (
     <div
       role="img"
-      aria-label="Slip Crossbody in Bone, Aperture Tote in Chestnut and Meridian Backpack in Black Oxide"
+      aria-label={three.map((p) => p.name).join(', ')}
       className={url ? 'still plate' : 'still still-loading'}
       style={url ? { backgroundImage: `url("${url}")` } : undefined}
     />
@@ -31,7 +43,7 @@ function HeroStill() {
 }
 
 const TOOLS = [
-  { icon: <CubeIcon />, t: 'Turn every bag in 3D', b: 'A real model of each structure, rotated in your own hands before it is cut.', cta: 'Open the viewer', href: '/products/aperture-tote' },
+  { icon: <CubeIcon />, t: 'Turn every bag in 3D', b: 'A real model of each structure, rotated in your own hands before it is cut.', cta: 'Open the viewer', href: '/shop' },
   { icon: <UserIcon />, t: 'Hang it on your photograph', b: 'Upload a full-length picture and scale the bag onto your own frame.', cta: 'Enter the fitting room', href: '/fitting-room' },
   { icon: <SparkleIcon />, t: 'Three questions, one bag', b: 'Tell the stylist how you leave the house and it recommends a single answer.', cta: 'Ask the stylist', href: '/stylist' },
 ];
@@ -45,44 +57,58 @@ const TRUST = [
 
 export function HomeView() {
   const add = useAddDefault();
-  const hero = PRODUCTS[0];
-  const heroPrice = basePrice(usePrices(), hero.id);
+  const { products } = useCatalog();
+  const pl = usePrices();
+  // The lead product is whatever the atelier lists first.
+  const hero = products[0];
+  const heroPrice = hero ? basePrice(pl, hero.id) : null;
+  const featured = products.slice(0, 4);
   return (
     <div>
-      <section className="hero">
-        <HeroStill />
-      </section>
+      {products.length > 0 && (
+        <section className="hero">
+          <HeroStill />
+        </section>
+      )}
 
-      <section className="hero-copy">
-        <div className="kicker kicker-sm" style={{ marginBottom: 26 }}>Series IV — No. 01</div>
-        <h1>The Aperture Tote</h1>
-        <p>
-          One piece of vegetable-tanned shoulder hide, folded into a square mouth that holds itself open. Ninety days in the
-          Tuscan pits, saddle-stitched by two hands, finished to the hide, hardware and initials you specify.
-        </p>
-        <div className="price-row">
-          <span className="big">{priceText(heroPrice)}</span>
-          <span className="rev">{stars(5)} · {hero.reviewCount} reviews</span>
-        </div>
-        <div className="btn-row centered">
-          <button className="btn btn-primary btn-lg" disabled={heroPrice === null} onClick={() => add(hero.id)}>Add to bag</button>
-          <Link className="btn btn-ghost btn-lg" style={{ paddingInline: 8 }} href={`/products/${hero.id}`}>Specify in 3D</Link>
-        </div>
-        <div className="reassure">Made to order · insured delivery · thirty-day return</div>
-      </section>
+      {hero ? (
+        <section className="hero-copy">
+          <div className="kicker kicker-sm" style={{ marginBottom: 26 }}>{hero.numeral ? `No. ${hero.numeral}` : hero.category}</div>
+          <h1>The {hero.name}</h1>
+          {hero.blurb && <p>{hero.blurb}</p>}
+          <div className="price-row">
+            <span className="big">{priceText(heroPrice)}</span>
+            {hero.reviewCount > 0 && <span className="rev">{stars(hero.rating)} · {hero.reviewCount} reviews</span>}
+          </div>
+          <div className="btn-row centered">
+            <button className="btn btn-primary btn-lg" disabled={heroPrice === null} onClick={() => add(hero.id)}>Add to bag</button>
+            <Link className="btn btn-ghost btn-lg" style={{ paddingInline: 8 }} href={`/products/${hero.id}`}>Specify in 3D</Link>
+          </div>
+          <div className="reassure">Made to order · insured delivery · thirty-day return</div>
+        </section>
+      ) : (
+        <section className="hero-copy">
+          <h1>The collection is being prepared.</h1>
+          <p>New pieces are on the bench. Come back soon.</p>
+        </section>
+      )}
 
-      <section className="wrap section">
-        <div className="section-head">
-          <div className="kicker">The collection</div>
-          <h2>Eight structures</h2>
-        </div>
-        <div className="grid-cards cols-4">
-          {FEATURED.map((p) => <ProductCard key={p.id} product={p} />)}
-        </div>
-        <div className="center" style={{ marginTop: 56 }}>
-          <Link className="btn btn-primary btn-lg" style={{ paddingInline: 34 }} href="/shop">Discover all eight</Link>
-        </div>
-      </section>
+      {featured.length > 0 && (
+        <section className="wrap section">
+          <div className="section-head">
+            <div className="kicker">The collection</div>
+            <h2>{countWord(products.length)} {products.length === 1 ? 'structure' : 'structures'}</h2>
+          </div>
+          <div className="grid-cards cols-4">
+            {featured.map((p) => <ProductCard key={p.id} product={p} />)}
+          </div>
+          <div className="center" style={{ marginTop: 56 }}>
+            <Link className="btn btn-primary btn-lg" style={{ paddingInline: 34 }} href="/shop">
+              {products.length > 1 ? `Discover all ${countWord(products.length).toLowerCase()}` : 'Discover the collection'}
+            </Link>
+          </div>
+        </section>
+      )}
 
       <section className="wrap section">
         <div className="divider" />
@@ -96,16 +122,6 @@ export function HomeView() {
             </Link>
           ))}
         </div>
-      </section>
-
-      <section className="wrap narrow center" style={{ paddingTop: 118 }}>
-        {REVIEWS.map((r) => (
-          <figure key={r.who} className="quote">
-            <div className="s" aria-label="Five stars">{stars(5)}</div>
-            <blockquote>{r.body}</blockquote>
-            <figcaption>{r.who} — {r.bag}</figcaption>
-          </figure>
-        ))}
       </section>
 
       <section className="wrap" style={{ paddingTop: 60 }}>
