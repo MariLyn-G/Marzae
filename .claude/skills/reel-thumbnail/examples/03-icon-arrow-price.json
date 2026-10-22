@@ -1,0 +1,72 @@
+{
+  "background": {
+    "image": "placeholder-bg-dark.jpg",
+    "blur": 6,
+    "brightness": 0.7
+  },
+  "vignette": 0.6,
+  "subject": {
+    "image": "placeholder-subject.png",
+    "height": 1150,
+    "cx": 540,
+    "bottom": 1920
+  },
+  "elements": [
+    {
+      "type": "text",
+      "text": "$280",
+      "font": "montserrat",
+      "weight": 900,
+      "size": 260,
+      "y": 280
+    },
+    {
+      "type": "text",
+      "text": "/DAY",
+      "font": "montserrat",
+      "weight": 900,
+      "size": 170,
+      "y": 560,
+      "color": "#111111",
+      "box": {
+        "color": "#E040FB",
+        "radius": 8,
+        "pad": [
+          36,
+          18
+        ]
+      },
+      "shadow": {
+        "blur": 12,
+        "opacity": 0.4,
+        "offset": [
+          0,
+          6
+        ]
+      }
+    },
+    {
+      "type": "badge",
+      "text": "*",
+      "text_scale": 0.8,
+      "color": "#EE6A3C",
+      "w": 300,
+      "cx": 210,
+      "cy": 1230,
+      "rotate": -8
+    },
+    {
+      "type": "arrow",
+      "from": [
+        300,
+        1400
+      ],
+      "to": [
+        820,
+        820
+      ],
+      "bend": 0.3,
+      "width": 12
+    }
+  ]
+}

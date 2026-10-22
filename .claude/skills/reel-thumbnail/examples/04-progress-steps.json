@@ -1,0 +1,79 @@
+{
+  "background": {
+    "image": "placeholder-bg-warm.jpg",
+    "blur": 6
+  },
+  "wash": {
+    "colors": [
+      "#E53935",
+      "#FDD835",
+      "#43A047"
+    ],
+    "direction": "horizontal",
+    "opacity": 0.35
+  },
+  "gradients": [
+    {
+      "edge": "bottom",
+      "height": 0.35,
+      "color": "#000000",
+      "opacity": 0.6
+    }
+  ],
+  "subject": {
+    "image": "placeholder-subject.png",
+    "height": 1250,
+    "cx": 540,
+    "bottom": 1920
+  },
+  "elements": [
+    {
+      "type": "steps",
+      "layer": "back",
+      "points": [
+        [
+          90,
+          820
+        ],
+        [
+          260,
+          780
+        ],
+        [
+          430,
+          700
+        ],
+        [
+          650,
+          560
+        ],
+        [
+          820,
+          430
+        ],
+        [
+          990,
+          290
+        ]
+      ],
+      "radius": 40
+    },
+    {
+      "type": "text",
+      "text": "Thank Me\nLater",
+      "font": "montserrat",
+      "weight": 900,
+      "size": 190,
+      "y": 1480,
+      "valign": "bottom",
+      "underline": {
+        "color": "#E53935",
+        "lines": [
+          1
+        ],
+        "start": 0.1,
+        "end": 1.0
+      }
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "background": {
+    "image": "placeholder-bg-warm.jpg",
+    "blur": 10,
+    "brightness": 0.85,
+    "saturation": 0.6
+  },
+  "subject": {
+    "image": "placeholder-subject.png",
+    "height": 1000,
+    "cx": 540,
+    "bottom": 1920
+  },
+  "gradients": [
+    {
+      "edge": "bottom",
+      "height": 0.35,
+      "color": "#000000",
+      "opacity": 0.5
+    }
+  ],
+  "elements": [
+    {
+      "type": "text",
+      "text": "NO SALES\nNO\nCOMPANY",
+      "font": "anton",
+      "size": 220,
+      "y": 280,
+      "line_spacing": 0.8,
+      "brush": {
+        "color": "#7FB3E6",
+        "lines": [
+          2
+        ]
+      }
+    },
+    {
+      "type": "text",
+      "text": "MARK CUBAN",
+      "font": "anton",
+      "size": 64,
+      "y": 1060,
+      "box": {
+        "color": "#111111",
+        "radius": 6,
+        "pad": [
+          20,
+          10
+        ]
+      },
+      "shadow": {
+        "blur": 8,
+        "opacity": 0.5,
+        "offset": [
+          0,
+          4
+        ]
+      }
+    }
+  ]
+}

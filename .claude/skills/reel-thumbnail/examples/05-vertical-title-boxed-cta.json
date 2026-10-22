@@ -1,0 +1,81 @@
+{
+  "background": {
+    "image": "placeholder-bg-dark.jpg",
+    "blur": 4,
+    "brightness": 0.8
+  },
+  "gradients": [
+    {
+      "edge": "bottom",
+      "height": 0.45,
+      "color": "#000000",
+      "opacity": 0.85
+    },
+    {
+      "edge": "top",
+      "height": 0.25,
+      "color": "#000000",
+      "opacity": 0.5
+    }
+  ],
+  "subject": {
+    "image": "placeholder-subject.png",
+    "height": 1150,
+    "cx": 540,
+    "bottom": 1560
+  },
+  "elements": [
+    {
+      "type": "text",
+      "layer": "back",
+      "text": "SEEDANCE 2.5",
+      "font": "anton",
+      "size": 230,
+      "y": 270,
+      "max_width": 1000
+    },
+    {
+      "type": "badge",
+      "text": "Ai",
+      "color": "#3B82F6",
+      "w": 220,
+      "cx": 170,
+      "cy": 820,
+      "rotate": -10
+    },
+    {
+      "type": "badge",
+      "text": "S",
+      "color": "#C6F432",
+      "text_color": "#111111",
+      "w": 220,
+      "cx": 910,
+      "cy": 820,
+      "rotate": 10
+    },
+    {
+      "type": "text",
+      "text": "CHEAPEST WAY TO",
+      "font": "montserrat",
+      "weight": 900,
+      "size": 96,
+      "y": 1230
+    },
+    {
+      "type": "text",
+      "text": "MAKE AI VIDEOS",
+      "font": "montserrat",
+      "weight": 900,
+      "size": 104,
+      "y": 1350,
+      "box": {
+        "color": "#E53935",
+        "radius": 22,
+        "pad": [
+          30,
+          16
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "background": {
+    "image": "placeholder-bg-warm.jpg",
+    "blur": 8,
+    "brightness": 1.05
+  },
+  "gradients": [
+    {
+      "edge": "bottom",
+      "height": 0.4,
+      "color": "#000000",
+      "opacity": 0.55
+    }
+  ],
+  "subject": {
+    "image": "placeholder-subject.png",
+    "height": 1300,
+    "cx": 540,
+    "bottom": 1920
+  },
+  "elements": [
+    {
+      "type": "text",
+      "layer": "back",
+      "text": "$500K",
+      "font": "montserrat",
+      "weight": 900,
+      "size": 330,
+      "y": 300,
+      "max_width": 1020
+    },
+    {
+      "type": "badge",
+      "text": "AI",
+      "color": "#D97757",
+      "w": 230,
+      "cx": 200,
+      "cy": 860,
+      "rotate": 6
+    },
+    {
+      "type": "text",
+      "text": "from a\n13-page ebook",
+      "font": "montserrat",
+      "weight": 900,
+      "size": 120,
+      "y": 1480,
+      "valign": "bottom",
+      "line_spacing": 1.0,
+      "max_width": 960
+    }
+  ]
+}
